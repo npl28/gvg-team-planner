@@ -2164,15 +2164,51 @@
       )),
     );
 
+    // Team OFF-TYPE: member đạt chuẩn của từng team (Physical -> Special -> Chưa rõ)
+    const offBy = new Map(state.members.map((m) => [m.id, []]));
+    const offRank = (t) => ({ PHYSICAL: 0, SPECIAL: 1 })[offCategory(t)] ?? 2;
+    const offTeams = [...state.offTeams].sort((a, b) => offRank(a) - offRank(b) || offName(a).localeCompare(offName(b)));
+    const offChip = (t, cls = '') => {
+      const c = offCatInfo(offCategory(t));
+      return el('button', { type: 'button', class: 'chip off-chip ' + cls, title: `Mở team OFF-TYPE · ${catLabel(offCategory(t))}`, onclick: () => gotoOffTeam(t) },
+        el('i', { class: 'off-dot', style: c ? `background:${c.color}` : null }), offName(t));
+    };
+    const offRows = offTeams.map((t) => {
+      const r = evalTeam(t);
+      for (const o of r.qualified) offBy.get(o.m.id).push(t);
+      return el('tr', null,
+        el('td', null, offChip(t)),
+        el('td', null, catChip(offCategory(t), !t.category)),
+        el('td', null, el('div', { class: 'off-minis' }, offPairs(t).map((p) => el('span', { class: 'off-mini', title: pairLabel(p) },
+          CATALOG.length ? avatar(iconFor(p), 26) : null, el('span', { class: 'off-mini-name' }, shortPair(p)))))),
+        el('td', { class: 'num off-req' }, offReqText(t)),
+        el('td', { class: 'num' }, teamPill(r)),
+        el('td', null, r.qualified.length
+          ? r.qualified.map((o) => el('span', { class: 'chip ok' }, o.m.name))
+          : el('span', { class: 'muted small' }, r.partial.length ? `${r.partial.length} member có đủ pair nhưng thiếu level` : '–')));
+    });
+    const offCard = el('div', { class: 'card' },
+      el('h2', { class: 'section-title' }, 'Số member đạt chuẩn – team OFF-TYPE',
+        el('a', { class: 'section-link', href: '#offtype' }, 'Mở OFF-TYPE builder')),
+      offRows.length
+        ? el('div', { class: 'scroll' }, el('table', { class: 'matrix off-table' },
+          el('thead', null, el('tr', null,
+            el('th', null, 'Team'), el('th', null, 'Loại'), el('th', null, 'Pair'),
+            el('th', { class: 'num' }, 'Move level'), el('th', { class: 'num' }, 'Số đạt'), el('th', null, 'Member đạt chuẩn'))),
+          el('tbody', null, offRows)))
+        : el('div', { class: 'empty off-empty' }, 'Chưa có team OFF-TYPE nào.'));
+
     const pairCount = (m) => state.groups.reduce((n, g) => n + g.pairs.filter((p) => typeof p.levels[m.id] === 'number').length, 0);
     const members = el('div', { class: 'card' },
       el('h2', { class: 'section-title' }, 'Member có thể vào team nào'),
       el('div', { class: 'scroll' }, el('table', { class: 'matrix' },
         el('thead', null, el('tr', null,
           el('th', null, 'Member'), el('th', null, 'Tag'), el('th', null, 'Số pair'),
-          el('th', null, 'Số team đạt'), el('th', null, 'Team đạt chuẩn'))),
+          el('th', null, 'Số team đạt'), el('th', null, 'Team đạt chuẩn'),
+          state.offTeams.length ? el('th', null, 'Team OFF-TYPE đạt chuẩn') : null)),
         el('tbody', null, state.members.map((m) => {
           const list = qualifiedBy.get(m.id);
+          const offList = offBy.get(m.id);
           return el('tr', null,
             el('td', null, el('strong', null, m.name)),
             el('td', { class: 'muted' }, m.tag),
@@ -2182,6 +2218,9 @@
               el('a', { class: 'boss-link', href: '#boss/' + b.id }, typeDot(bossType(b)), b.name), ' ',
               items.map(({ bl, t }) => el('span', { class: 'chip ok' }, `${bl.title} ${t.label.replace(/^Team\s*/i, '')}`)),
             ))),
+            state.offTeams.length
+              ? el('td', null, offList.length ? offList.map((t) => offChip(t, 'ok')) : el('span', { class: 'muted' }, '–'))
+              : null,
           );
         })),
       )),
@@ -2189,7 +2228,21 @@
 
     return el('div', null,
       el('div', { class: 'page-head' }, el('h1', null, 'Tổng quan')),
-      el('div', { class: 'summary-grid' }, matrix, members));
+      el('div', { class: 'summary-grid' }, matrix, offCard, members));
+  }
+
+  /** Từ trang khác: mở tab OFF-TYPE, mở panel của team và cuộn tới. */
+  function gotoOffTeam(t) {
+    if (location.hash === '#offtype') { openOffTeam(t); return; }
+    ui.offOpen.add(t.id);
+    saveUi();
+    if (!offMatches(t)) offView = { ...offView, cat: '', q: '', pair: '' };
+    // Trình xử lý hashchange của app vẽ trang và cuộn lên đầu trước, rồi mới cuộn tới team
+    window.addEventListener('hashchange', () => setTimeout(() => {
+      const node = document.getElementById('off-' + t.id);
+      if (node) node.scrollIntoView({ block: 'start' });
+    }), { once: true });
+    location.hash = 'offtype';
   }
 
   function groupByBoss(list) {
