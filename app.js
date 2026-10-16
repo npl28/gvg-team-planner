@@ -1015,15 +1015,18 @@
         collapsed: new Set(Array.isArray(v.collapsed) ? v.collapsed : []),
         offOpen: new Set(Array.isArray(v.offOpen) ? v.offOpen : []),
         colW: v.colW && typeof v.colW === 'object' ? v.colW : {},
+        teamOpen: v.teamOpen && typeof v.teamOpen === 'object' ? v.teamOpen : {},
       };
     } catch (_) {
-      return { collapsed: new Set(), offOpen: new Set(), colW: {} };
+      return { collapsed: new Set(), offOpen: new Set(), colW: {}, teamOpen: {} };
     }
   })();
 
   function saveUi() {
     try {
-      localStorage.setItem(UI_KEY, JSON.stringify({ collapsed: [...ui.collapsed], offOpen: [...ui.offOpen], colW: ui.colW }));
+      localStorage.setItem(UI_KEY, JSON.stringify({
+        collapsed: [...ui.collapsed], offOpen: [...ui.offOpen], colW: ui.colW, teamOpen: ui.teamOpen,
+      }));
     } catch (_) { /* bỏ qua */ }
   }
 
@@ -1667,18 +1670,22 @@
       el('label', { class: 'wide' }, 'Ghi chú trận / điểm then chốt', bound(boss, 'note', { placeholder: 'Chiến thuật, lưu ý…' })),
     );
 
+    // Mỗi category (PHYSICAL / SPECIAL) chia 2 cột: Cheer bên trái, Carry bên phải
     const cats = [...new Set(boss.blocks.map((b) => b.category))];
+    const kindRank = (bl) => ({ cheer: 0, carry: 1 })[blockKind(bl)] ?? 2;
     const sections = cats.map((cat) => el('section', { class: 'category' },
       el('h2', null, cat),
-      boss.blocks.filter((b) => b.category === cat).map((block) => renderBlock(boss, block)),
+      el('div', { class: 'block-cols' }, boss.blocks.filter((b) => b.category === cat)
+        .sort((a, b) => kindRank(a) - kindRank(b))
+        .map((block) => renderBlock(boss, block))),
     ));
 
     return el('div', null,
       el('div', { class: 'boss-sticky', id: 'bossSticky' }, head, renderBossNav(boss)),
       info,
       el('p', { class: 'hint' },
-        'Chọn pair từ Rosters và move level required cho từng slot. Bảng kết quả tự lấy member có đủ pair và level ≥ required ' +
-        '(xanh = đạt, đỏ = thiếu level).'),
+        'Bấm đầu thẻ phương án để mở / thu gọn. Chọn pair từ Rosters và move level required cho từng slot. ' +
+        'Bảng kết quả tự lấy member có đủ pair và level ≥ required (xanh = đạt, đỏ = thiếu level).'),
       sections);
   }
 
@@ -1789,7 +1796,10 @@
           class: 'btn btn-sm btn-ghost',
           onclick: () => {
             const letter = String.fromCharCode(65 + block.teams.length);
-            block.teams.push(newTeam('Team ' + letter));
+            const t = newTeam('Team ' + letter);
+            block.teams.push(t);
+            ui.teamOpen[t.id] = true;
+            saveUi();
             save();
             render();
           },
@@ -1954,37 +1964,72 @@
     return tags.length ? el('div', { class: 'slot-tags', title: 'Tag của sync pair – sửa ở Rosters hoặc Kho icon' }, tags.map(tagChip)) : null;
   }
 
+  /** Thẻ phương án đang mở? Người dùng đã bấm thì theo đó, chưa thì chỉ mở thẻ đầu tiên của block. */
+  function teamIsOpen(block, team) {
+    const v = ui.teamOpen[team.id];
+    return typeof v === 'boolean' ? v : block.teams[0] === team;
+  }
+
+  /** Icon các pair đã chọn + move level "x-y-z" – hiện ở đầu thẻ khi thu gọn. */
+  function teamMinis(team) {
+    const ps = team.slots.map((s) => s.pair && idx.pair.get(s.pair)).filter(Boolean);
+    if (!ps.length) return el('span', { class: 'team-minis muted small' }, 'chưa chọn pair');
+    return el('span', { class: 'team-minis', title: ps.map(pairLabel).join('\n') },
+      CATALOG.length ? ps.map((p) => avatar(iconFor(p), 28)) : ps.map(shortPair).join(' · '),
+      el('span', { class: 'off-req', title: 'Move level required' }, offReqText(team)));
+  }
+
+  /** Thẻ phương án: đầu thẻ (tên, số đạt, pair, ghi chú) luôn hiện; bấm để mở slot + bảng member. */
   function renderTeam(boss, block, team) {
-    const card = el('div', { class: 'card team' });
-    const rerender = () => {
-      const fk = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.fk : null;
+    const open = teamIsOpen(block, team);
+    const card = el('div', { class: 'card team' + (open ? ' open' : ' collapsed') });
+    const rerender = (focusKey) => {
+      const a = document.activeElement;
+      const fk = focusKey || (a && card.contains(a) && a.dataset ? a.dataset.fk : null);
       const fresh = renderTeam(boss, block, team);
       card.replaceWith(fresh);
-      if (fk) { const f = fresh.querySelector(`[data-fk="${fk}"]`); if (f) f.focus(); }
+      if (fk) { const f = fresh.querySelector(`[data-fk="${CSS.escape(fk)}"]`); if (f) f.focus(); }
       save();
       renderTabs(currentRoute());
       refreshBossNav(boss);
     };
+    const toggle = () => {
+      ui.teamOpen[team.id] = !open;
+      saveUi();
+      rerender('toggle');
+    };
     const result = evalTeam(team);
 
-    const head = el('div', { class: 'team-head' },
+    const head = el('div', {
+      class: 'team-head',
+      onclick: (e) => { if (!e.target.closest('a, button, input, select, textarea')) toggle(); },
+    },
+      el('button', {
+        type: 'button', class: 'team-toggle', 'aria-expanded': String(open), dataset: { fk: 'toggle' },
+        title: open ? 'Thu gọn' : 'Mở chi tiết', 'aria-label': `${open ? 'Thu gọn' : 'Mở'} ${team.label || 'phương án'}`, onclick: toggle,
+      }, ic('chevron')),
       bound(team, 'label', { class: 'edit label' }),
       teamPill(result),
+      open ? null : teamMinis(team),
       bound(team, 'note', { class: 'edit note', placeholder: 'Ghi chú team…' }),
       el('button', {
         class: 'icon-btn', title: 'Xóa phương án này', 'aria-label': 'Xóa phương án này',
         onclick: () => {
           if (!confirm(`Xóa ${team.label || 'phương án'} của ${block.title}?`)) return;
           block.teams = block.teams.filter((t) => t !== team);
+          delete ui.teamOpen[team.id];
+          saveUi();
           save();
           render();
         },
       }, ic('x')),
     );
 
-    const slots = el('div', { class: 'slots' }, team.slots.map((s, i) => renderSlot(team, s, i, rerender)));
-
-    card.append(head, slots, renderResult(team, result));
+    card.append(head);
+    if (open) {
+      card.append(el('div', { class: 'slots' }, team.slots.map((s, i) => renderSlot(team, s, i, rerender))),
+        renderResult(team, result));
+    }
     return card;
   }
 
