@@ -230,10 +230,14 @@
     };
   }
 
+  /** Round mà team OFF-TYPE clear được (checkbox trong team). */
+  const OFF_ROUNDS = ['R4', 'R5', 'R6'];
+
   function normOffTeam(t = {}) {
     return {
       id: str(t.id) || uid('o'), name: str(t.name), note: str(t.note),
       category: t.category === 'PHYSICAL' || t.category === 'SPECIAL' ? t.category : '',
+      rounds: OFF_ROUNDS.filter((r) => Array.isArray(t.rounds) && t.rounds.includes(r)),
       created: Number(t.created) || Date.now(),
       slots: [0, 1, 2].map((k) => normSlot((t.slots || [])[k])),
       links: (Array.isArray(t.links) ? t.links : []).map(normLink),
@@ -2359,6 +2363,7 @@
   const OFF_SORTS = [
     { key: 'cat', label: 'Physical → Special' },
     { key: 'new', label: 'Mới tạo trước' },
+    { key: 'round', label: 'Theo round (R4 → R6)' },
     { key: 'name', label: 'Tên A–Z' },
     { key: 'records', label: 'Nhiều record nhất' },
     { key: 'best', label: 'Điểm cao nhất' },
@@ -2479,7 +2484,7 @@
     if (f.pair && !ignorePair && !t.slots.some((s) => s.pair === f.pair)) return false;
     const words = fold(f.q).split(/\s+/).filter(Boolean);
     if (!words.length) return true;
-    const hay = fold([offName(t), t.note, ...offPairs(t).map(pairLabel),
+    const hay = fold([offName(t), t.note, ...t.rounds, ...offPairs(t).map(pairLabel),
       ...t.records.flatMap((r) => [r.season, r.round, r.boss, r.member, r.note])].join(' '));
     return words.every((w) => hay.includes(w));
   }
@@ -2488,8 +2493,11 @@
     const rank = (t) => ({ PHYSICAL: 0, SPECIAL: 1 })[offCategory(t)] ?? 2;
     const best = (t) => offBest(t) ?? -1;
     const byName = (a, b) => offName(a).localeCompare(offName(b));
+    // Round thấp nhất clear được trước (chưa chọn round thì xuống cuối), cùng round đầu thì team clear nhiều round hơn trước
+    const firstRound = (t) => (t.rounds.length ? OFF_ROUNDS.indexOf(t.rounds[0]) : OFF_ROUNDS.length);
     const cmp = {
       cat: (a, b) => rank(a) - rank(b) || byName(a, b),
+      round: (a, b) => firstRound(a) - firstRound(b) || b.rounds.length - a.rounds.length || rank(a) - rank(b) || byName(a, b),
       new: (a, b) => b.created - a.created,
       name: byName,
       records: (a, b) => b.records.length - a.records.length || best(b) - best(a),
@@ -2594,13 +2602,14 @@
       const cat = offCategory(t);
       if (offView.sort === 'cat' && cat !== lastCat) {
         lastCat = cat;
-        rows.push(el('tr', { class: 'off-group' }, el('td', { colspan: 8 }, catChip(cat),
+        rows.push(el('tr', { class: 'off-group' }, el('td', { colspan: 9 }, catChip(cat),
           el('span', { class: 'muted small' }, ` ${teams.filter((x) => offCategory(x) === cat).length} team`))));
       }
       const best = offBest(t);
       rows.push(el('tr', null,
         el('td', null, el('button', { type: 'button', class: 'link-btn', title: 'Mở team', onclick: () => openOffTeam(t) }, offName(t))),
         el('td', null, catChip(cat, !t.category)),
+        el('td', null, roundChips(t) || el('span', { class: 'muted' }, '–')),
         el('td', null, el('div', { class: 'off-minis' }, offPairs(t).map((p) => pairFilterBtn(p, 26)))),
         el('td', { class: 'num off-req', title: 'Move level required của từng pair (– = chưa đặt)' }, offReqText(t)),
         el('td', { class: 'num' }, teamPill(evalTeam(t))),
@@ -2611,7 +2620,7 @@
     }
     return el('div', { class: 'scroll' }, resizableTable(el('table', { class: 'matrix off-table' },
       el('thead', null, el('tr', null,
-        el('th', null, 'Team'), el('th', null, 'Loại'), el('th', null, 'Pair (bấm để lọc)'),
+        el('th', null, 'Team'), el('th', null, 'Loại'), el('th', { title: 'Round team clear được' }, 'Round'), el('th', null, 'Pair (bấm để lọc)'),
         el('th', { class: 'num', title: 'Move level required theo thứ tự pair' }, 'Move level'),
         el('th', { class: 'num', title: 'Số member có đủ pair và đạt Required' }, 'Member đạt'),
         el('th', { class: 'num' }, 'Record'), el('th', { class: 'num' }, 'Điểm cao nhất'), el('th', null, 'Grid / video'))),
@@ -2721,6 +2730,29 @@
       OFF_CATS.map((c) => el('option', { value: c.key, selected: obj.category === c.key }, c.label)));
   }
 
+  /** Chip R4 / R5 / R6 của các round team clear được. */
+  function roundChips(t) {
+    return t.rounds.length
+      ? el('span', { class: 'off-rounds' }, t.rounds.map((r) => el('span', { class: 'off-round' }, r)))
+      : null;
+  }
+
+  /** Nhóm checkbox chọn round team clear được. */
+  function roundPicker(obj, onChange) {
+    return el('div', { class: 'off-round-field', role: 'group', 'aria-label': 'Round clear được' },
+      el('span', { class: 'off-field-label' }, 'Round clear được'),
+      el('div', { class: 'off-round-checks' }, OFF_ROUNDS.map((r) => el('label', { class: 'off-round-check' },
+        el('input', {
+          type: 'checkbox', checked: obj.rounds.includes(r), dataset: { fk: `round-${r}` },
+          onchange: (e) => {
+            const on = new Set(obj.rounds);
+            if (e.target.checked) on.add(r); else on.delete(r);
+            obj.rounds = OFF_ROUNDS.filter((x) => on.has(x));
+            if (onChange) onChange();
+          },
+        }), r))));
+  }
+
   /**
    * Popup tạo team: tên, loại, link grid / video, 3 pair. Tạo xong team thành một panel trong danh sách.
    * Đóng popup không mất nháp; "Làm lại" mới xóa.
@@ -2729,7 +2761,7 @@
     const dlg = $('#offDialog');
     const draw = (focusKey) => {
       const fk = focusKey || activeFk(dlg);
-      const d = offDraft || (offDraft = { name: '', category: '', note: '', grid: '', video: '', slots: [emptySlot(), emptySlot(), emptySlot()] });
+      const d = offDraft || (offDraft = { name: '', category: '', rounds: [], note: '', grid: '', video: '', slots: [emptySlot(), emptySlot(), emptySlot()] });
       const hasPair = d.slots.some((s) => s.pair);
       const dup = hasPair && state.offTeams.find((t) => samePairs(t, d));
       const create = () => {
@@ -2750,6 +2782,7 @@
           el('label', null, 'Tên team',
             el('input', { class: 'edit', value: d.name, placeholder: 'vd Mega Ray nuke', dataset: { fk: 'name' }, oninput: (e) => { d.name = e.target.value; } })),
           el('label', null, 'Loại', catSelect(d, offAutoCategory(d), draw, { dataset: { fk: 'cat' } })),
+          roundPicker(d),
           el('label', null, 'Link grid', linkField(d, 'grid', 'grid', { dataset: { fk: 'grid' } })),
           el('label', null, 'Link video', linkField(d, 'video', 'video', { dataset: { fk: 'video' } }))),
         el('div', { class: 'slots' }, d.slots.map((s, i) => renderSlot(d, s, i, draw, true))),
@@ -2814,6 +2847,7 @@
       el('button', { type: 'button', class: 'off-toggle', 'aria-expanded': String(open), dataset: { fk: 'toggle' }, onclick: toggle },
         ic('chevron'), el('span', { class: 'off-name' }, offName(t))),
       catChip(offCategory(t), !t.category),
+      roundChips(t),
       el('div', { class: 'off-minis' }, t.slots.map((s, i) => {
         const p = s.pair && idx.pair.get(s.pair);
         return p
@@ -2834,6 +2868,7 @@
     const settings = el('div', { class: 'off-settings' },
       el('label', null, 'Tên team', bound(t, 'name', { placeholder: offName(t), dataset: { fk: 'name' } })),
       el('label', null, 'Loại', catSelect(t, offAutoCategory(t), () => rerender(), { dataset: { fk: 'cat' } })),
+      roundPicker(t, save),
       el('label', { class: 'wide' }, 'Ghi chú', boundArea(t, 'note', { placeholder: 'Cách xoay, thứ tự skill, lưu ý… (Enter để xuống dòng)' })),
     );
     return el('div', { class: 'off-body' },

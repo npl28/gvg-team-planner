@@ -886,6 +886,20 @@ button.off-mini.on { border-color: var(--accent); background: var(--accent-soft)
 .off-settings label > .edit { padding: 5px 8px; }
 .off-settings .field { min-height: 32px; text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 13px; color: var(--text); }
 .off-settings .wide { grid-column: 1 / -1; }
+.off-round-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.off-field-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.off-round-checks { display: flex; gap: 6px; min-height: 32px; align-items: center; flex-wrap: wrap; }
+.off-settings label.off-round-check {
+  flex-direction: row; align-items: center; gap: 6px; padding: 5px 12px 5px 9px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--input-bg); color: var(--text); font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: 0; cursor: pointer;
+}
+.off-settings label.off-round-check:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.off-round-check input { margin: 0; accent-color: var(--accent); cursor: pointer; }
+.off-rounds { display: inline-flex; gap: 3px; flex: none; }
+.off-round {
+  padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; line-height: 16px;
+  background: var(--accent-soft); color: var(--accent); font-variant-numeric: tabular-nums;
+}
 .off-foot { display: flex; justify-content: flex-end; gap: 8px; }
 .off-foot .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
 .off-dup { font-size: 12px; color: var(--warn); font-weight: 600; background: var(--warn-bg); padding: 6px 10px; border-radius: var(--radius-sm); }
