@@ -2305,6 +2305,7 @@
     if (location.hash === '#offtype') { openOffTeam(t); return; }
     ui.offOpen.add(t.id);
     saveUi();
+    offView.by = 'team';
     if (!offMatches(t)) offView = { ...offView, cat: '', q: '', pair: '' };
     // Trình xử lý hashchange của app vẽ trang và cuộn lên đầu trước, rồi mới cuộn tới team
     window.addEventListener('hashchange', () => setTimeout(() => {
@@ -2607,49 +2608,71 @@
       counts,
       sub: el('span', { class: 'page-sub' }),
       sum: el('div', { class: 'off-sum-body' }),
-      list: el('div', { class: 'off-list' }),
+      openAll: el('button', { type: 'button', class: 'btn btn-sm btn-ghost off-open-all', onclick: toggleAllOff }),
     };
-    const toolbar = el('div', { class: 'toolbar' },
-      segmented('Lọc theo loại', catOpts, () => offView.cat, (v) => { offView.cat = v; refreshOff(); }),
+    const toolbar = el('div', { class: 'toolbar off-toolbar' },
+      segmented('Lọc theo loại', catOpts, () => offView.cat, (v) => { offView.cat = v; fillOffSummary(); }),
       segmented('Xem theo', [{ key: 'team', label: 'Theo team' }, { key: 'pair', label: 'Theo pair' }],
         () => offView.by, (v) => { offView.by = v; fillOffSummary(); }),
-      el('select', { class: 'field', 'aria-label': 'Sắp xếp team', onchange: (e) => { offView.sort = e.target.value; refreshOff(); } },
-        OFF_SORTS.map((o) => el('option', { value: o.key, selected: offView.sort === o.key }, o.label))),
+      el('label', { class: 'sort-field', title: 'Sắp xếp' }, ic('sort'),
+        el('select', { class: 'field', 'aria-label': 'Sắp xếp team', onchange: (e) => { offView.sort = e.target.value; fillOffSummary(); } },
+          OFF_SORTS.map((o) => el('option', { value: o.key, selected: offView.sort === o.key }, o.label)))),
       searchBox({
         placeholder: 'Tìm team, pair, member, boss…', value: offView.q, style: 'width:240px',
-        oninput: (e) => { offView.q = e.target.value; refreshOff(); },
+        oninput: (e) => { offView.q = e.target.value; fillOffSummary(); },
       }),
     );
-    refreshOff();
+    fillOffSummary();
     return el('div', { class: 'off-page' },
       el('div', { class: 'page-head' },
         el('h1', null, 'OFF-TYPE builder'), offRefs.sub,
         el('span', { class: 'spacer' }),
         el('button', { class: 'btn', title: 'Nạp file team OFF-TYPE (chọn được nhiều file)', onclick: () => $('#fileInput').click() },
-          ic('upload'), 'Import'),
+          ic('upload'), 'Import team'),
         el('button', { class: 'btn', title: 'Tải toàn bộ team OFF-TYPE (kèm record, link) ra file JSON', onclick: exportOffTeams },
-          ic('download'), 'Export'),
+          ic('download'), 'Export team'),
         el('button', { class: 'btn btn-primary', onclick: () => openOffBuilder() }, ic('plus'), 'Tạo team')),
-      el('section', { class: 'card off-sum', 'aria-label': 'Tổng hợp team OFF-TYPE' },
-        el('div', { class: 'section-head' }, el('h2', { class: 'section-title' }, 'Tổng hợp'), toolbar),
-        offRefs.sum),
-      offRefs.list);
+      el('section', { class: 'card off-sum', 'aria-label': 'Danh sách team OFF-TYPE' },
+        el('div', { class: 'section-head' }, el('h2', { class: 'section-title' }, 'Tổng hợp'), offRefs.openAll, toolbar),
+        offRefs.sum));
   }
 
-  function refreshOff() {
-    if (!offRefs) return;
-    fillOffSummary();
-    fillOffList();
+  const refreshOff = () => fillOffSummary();
+
+  /** Team đang hiện trong bảng "Theo team" (sau lọc + sắp xếp). */
+  function visibleOffTeams() {
+    return offSorted(state.offTeams.filter((t) => offMatches(t)));
   }
 
-  function fillOffSummary() {
+  /** Số đếm trên nút lọc, dòng phụ dưới tiêu đề và nút Mở / Thu gọn tất cả – không vẽ lại bảng. */
+  function updateOffCounts() {
     if (!offRefs) return;
     const all = state.offTeams;
-    if (offView.pair && !idx.pair.has(offView.pair)) offView.pair = '';
     const n = { '': all.length, PHYSICAL: 0, SPECIAL: 0, NONE: 0 };
     for (const t of all) n[offCategory(t) || 'NONE']++;
     for (const [k, node] of Object.entries(offRefs.counts)) node.textContent = n[k];
     offRefs.sub.textContent = `${all.length} team · ${all.reduce((x, t) => x + t.records.length, 0)} record`;
+    const teams = offView.by === 'team' ? visibleOffTeams() : [];
+    const allOpen = teams.length > 0 && teams.every((t) => ui.offOpen.has(t.id));
+    offRefs.openAll.textContent = allOpen ? 'Thu gọn tất cả' : 'Mở tất cả';
+    offRefs.openAll.hidden = !teams.length;
+  }
+
+  function toggleAllOff() {
+    const teams = visibleOffTeams();
+    const allOpen = teams.length > 0 && teams.every((t) => ui.offOpen.has(t.id));
+    for (const t of teams) {
+      if (allOpen) ui.offOpen.delete(t.id);
+      else ui.offOpen.add(t.id);
+    }
+    saveUi();
+    fillOffSummary();
+  }
+
+  function fillOffSummary() {
+    if (!offRefs) return;
+    if (offView.pair && !idx.pair.has(offView.pair)) offView.pair = '';
+    updateOffCounts();
     const p = offView.pair && idx.pair.get(offView.pair);
     const filter = p ? el('div', { class: 'off-filter' },
       'Đang lọc team có pair', CATALOG.length ? avatar(iconFor(p), 24) : null, el('strong', null, pairLabel(p)),
@@ -2657,39 +2680,139 @@
     offRefs.sum.replaceChildren(...[filter, offView.by === 'pair' ? offPairTable() : offTeamTable()].filter(Boolean));
   }
 
+  const offHasRounds = () => state.offTeams.some((t) => t.rounds.length);
+
+  /** Cột của bảng team; cột Round chỉ hiện khi có team đã tick round. */
+  function offColumns(showRound) {
+    return [
+      { label: 'Team', props: { class: 'off-sticky' } },
+      { label: 'Loại' },
+      showRound ? { label: 'Round', props: { title: 'Round team clear được' } } : null,
+      { label: 'Pair', props: { title: 'Bấm icon để lọc theo pair đó' } },
+      { label: 'Đạt', props: { class: 'num', title: 'Số member có đủ pair và đạt Required' } },
+      { label: 'Move level', props: { class: 'num', title: 'Move level required theo thứ tự pair' } },
+      { label: 'Record', props: { class: 'num' } },
+      { label: 'Điểm max', props: { class: 'num', title: 'Điểm cao nhất trong các record' } },
+      { label: 'Link' },
+    ].filter(Boolean);
+  }
+
+  /** Bảng team dạng accordion: mỗi team một hàng, bấm hàng để mở chi tiết (slot, link, record) ngay dưới. */
   function offTeamTable() {
-    if (!state.offTeams.length) return el('div', { class: 'empty off-empty' }, 'Chưa có team nào – bấm "+ Tạo team" để tạo team đầu tiên.');
-    const teams = offSorted(state.offTeams.filter((t) => offMatches(t)));
+    if (!state.offTeams.length) {
+      return el('div', { class: 'empty off-empty' }, 'Chưa có team nào. ',
+        el('button', { class: 'btn btn-sm btn-primary', onclick: () => openOffBuilder() }, ic('plus'), 'Tạo team đầu tiên'));
+    }
+    const teams = visibleOffTeams();
     if (!teams.length) return el('div', { class: 'empty off-empty' }, 'Không có team nào khớp bộ lọc.');
+    const showRound = offHasRounds();
+    const cols = offColumns(showRound);
     const rows = [];
     let lastCat = null;
     for (const t of teams) {
       const cat = offCategory(t);
       if (offView.sort === 'cat' && cat !== lastCat) {
         lastCat = cat;
-        rows.push(el('tr', { class: 'off-group' }, el('td', { colspan: 9 }, catChip(cat),
+        rows.push(el('tr', { class: 'off-group' }, el('td', { colspan: cols.length }, catChip(cat),
           el('span', { class: 'muted small' }, ` ${teams.filter((x) => offCategory(x) === cat).length} team`))));
       }
-      const best = offBest(t);
-      rows.push(el('tr', null,
-        el('td', null, el('button', { type: 'button', class: 'link-btn', title: 'Mở team', onclick: () => openOffTeam(t) }, offName(t))),
-        el('td', null, catChip(cat, !t.category)),
-        el('td', null, roundChips(t) || el('span', { class: 'muted' }, '–')),
-        el('td', null, el('div', { class: 'off-minis' }, offPairs(t).map((p) => pairFilterBtn(p, 26)))),
-        el('td', { class: 'num off-req', title: 'Move level required của từng pair (– = chưa đặt)' }, offReqText(t)),
-        el('td', { class: 'num' }, teamPill(evalTeam(t))),
-        el('td', { class: 'num' }, t.records.length || '–'),
-        el('td', { class: 'num' }, best != null ? fmtNum(best) : '–'),
-        el('td', null, el('div', { class: 'off-links' }, t.links.filter((l) => safeHref(l.url)).map(linkChip))),
-      ));
+      rows.push(...renderOffRows(t, showRound));
     }
-    return el('div', { class: 'scroll' }, resizableTable(el('table', { class: 'matrix off-table' },
-      el('thead', null, el('tr', null,
-        el('th', null, 'Team'), el('th', null, 'Loại'), el('th', { title: 'Round team clear được' }, 'Round'), el('th', null, 'Pair (bấm để lọc)'),
-        el('th', { class: 'num', title: 'Move level required theo thứ tự pair' }, 'Move level'),
-        el('th', { class: 'num', title: 'Số member có đủ pair và đạt Required' }, 'Member đạt'),
-        el('th', { class: 'num' }, 'Record'), el('th', { class: 'num' }, 'Điểm cao nhất'), el('th', null, 'Grid / video'))),
-      el('tbody', null, rows)), 'off-team'));
+    const scroll = el('div', { class: 'scroll off-scroll' }, resizableTable(el('table', { class: 'matrix off-table off-accordion' },
+      el('thead', null, el('tr', null, cols.map((c) => el('th', c.props, c.label)))),
+      el('tbody', null, rows)), showRound ? 'off-team2r' : 'off-team2'));
+    trackScrollWidth(scroll);
+    return scroll;
+  }
+
+  /**
+   * Ghi độ rộng khung cuộn vào --sw để thân chi tiết (hàng colspan) dính mép trái và rộng đúng bằng khung,
+   * thay vì rộng bằng cả bảng rồi cuộn ngang theo (màn hình hẹp).
+   */
+  function trackScrollWidth(scroll) {
+    const set = () => scroll.style.setProperty('--sw', scroll.clientWidth + 'px');
+    if (typeof ResizeObserver === 'function') new ResizeObserver(set).observe(scroll);
+    else requestAnimationFrame(set);
+  }
+
+  /** Icon các pair của team; bấm để lọc theo pair (tên đầy đủ trong tooltip). */
+  function offPairIcons(t) {
+    return t.slots.map((s) => {
+      const p = s.pair && idx.pair.get(s.pair);
+      if (!p) return s.pairName ? el('span', { class: 'off-ico warn', title: 'Chưa map: ' + s.pairName }, '⚠') : null;
+      return el('button', {
+        type: 'button', class: 'off-ico' + (offView.pair === p.id ? ' on' : ''),
+        title: `${pairLabel(p)}\nBấm để lọc theo pair này`, 'aria-label': `Lọc theo ${pairLabel(p)}`, 'aria-pressed': String(offView.pair === p.id),
+        onclick: () => setPairFilter(p.id),
+      }, CATALOG.length ? avatar(iconFor(p), 30) : el('span', { class: 'off-ico-txt' }, shortPair(p)));
+    });
+  }
+
+  /**
+   * Một team trong bảng: hàng tóm tắt (luôn hiện) + hàng chi tiết (khi mở). Trả về [tr] hoặc [tr, trChiTiết].
+   * Sửa trong chi tiết xong (blur) thì hàng tóm tắt tự cập nhật, giữ nguyên nút mở / thu gọn.
+   */
+  function renderOffRows(t, showRound) {
+    const open = ui.offOpen.has(t.id);
+    const cat = offCategory(t) || 'NONE';
+    const tr = el('tr', { class: 'off-row' + (open ? ' open' : ''), id: 'off-' + t.id, dataset: { cat } });
+    let detail = null;
+    const rerender = (focusKey) => {
+      if (offHasRounds() !== showRound) { fillOffSummary(); save(); return; } // thêm / bỏ cột Round -> vẽ lại cả bảng
+      const fk = focusKey || activeFk(tr) || (detail && activeFk(detail));
+      const fresh = renderOffRows(t, showRound);
+      if (detail) detail.remove();
+      tr.replaceWith(...fresh);
+      for (const row of fresh) {
+        const f = fk && row.querySelector(`[data-fk="${CSS.escape(fk)}"]`);
+        if (f) { f.focus(); break; }
+      }
+      save();
+      updateOffCounts();
+    };
+    const toggle = () => {
+      if (open) ui.offOpen.delete(t.id);
+      else ui.offOpen.add(t.id);
+      saveUi();
+      rerender('toggle');
+    };
+    const best = offBest(t);
+    // append(null) sẽ chèn chữ "null" nên phải lọc trước (cột Round có thể không có)
+    tr.append(...[
+      el('td', { class: 'off-sticky' },
+        el('button', {
+          type: 'button', class: 'off-toggle', 'aria-expanded': String(open), dataset: { fk: 'toggle' },
+          title: open ? 'Thu gọn' : 'Mở chi tiết', onclick: toggle,
+        }, ic('chevron'), el('span', { class: 'off-name' }, offName(t)))),
+      el('td', null, catChip(cat === 'NONE' ? '' : cat, !t.category)),
+      showRound ? el('td', null, roundChips(t) || el('span', { class: 'muted' }, '–')) : null,
+      el('td', null, el('div', { class: 'off-icos' }, offPairIcons(t))),
+      el('td', { class: 'num' }, teamPill(evalTeam(t))),
+      el('td', { class: 'num off-req', title: 'Move level required của từng pair (– = chưa đặt)' }, offReqText(t)),
+      el('td', { class: 'num' }, t.records.length || '–'),
+      el('td', { class: 'num' }, best != null ? fmtNum(best) : '–'),
+      el('td', null, el('div', { class: 'off-links' }, t.links.filter((l) => safeHref(l.url)).map(linkChip))),
+    ].filter(Boolean));
+    tr.addEventListener('click', (e) => { if (!e.target.closest('a, button, input, select, textarea')) toggle(); });
+    if (!open) return [tr];
+    detail = el('tr', { class: 'off-detail', dataset: { cat } },
+      el('td', { colspan: offColumns(showRound).length }, offPanelBody(t, rerender)));
+    detail.addEventListener('change', () => afterPointer(() => {
+      if (!detail.isConnected) return;
+      if (offHasRounds() !== showRound) { // tick round đầu tiên / bỏ round cuối -> thêm / bỏ cột Round, vẽ lại cả bảng
+        const fk = activeFk(detail);
+        fillOffSummary();
+        refocus(offRefs.sum, fk);
+        return;
+      }
+      // Chụp mảng ô trước khi chuyển: fresh.children là collection động, chuyển ô đi là nó co lại
+      const cells = [...renderOffRows(t, showRound)[0].children];
+      tr.querySelector('.off-name').textContent = offName(t);
+      [...tr.children].slice(1).forEach((c, i) => c.replaceWith(cells[i + 1]));
+      tr.dataset.cat = detail.dataset.cat = offCategory(t) || 'NONE';
+      updateOffCounts();
+    }));
+    return [tr, detail];
   }
 
   function offPairTable() {
@@ -2716,36 +2839,11 @@
       )))), 'off-pair'));
   }
 
-  function fillOffList() {
-    if (!offRefs) return;
-    const all = state.offTeams;
-    const teams = offSorted(all.filter((t) => offMatches(t)));
-    const allOpen = teams.length > 0 && teams.every((t) => ui.offOpen.has(t.id));
-    offRefs.list.replaceChildren(
-      el('div', { class: 'off-list-head' },
-        el('h2', null, 'Team đã tạo'),
-        el('span', { class: 'muted small' }, teams.length < all.length ? `${teams.length}/${all.length} team (đang lọc)` : `${all.length} team`),
-        el('span', { class: 'spacer' }),
-        teams.length ? el('button', {
-          class: 'btn btn-sm btn-ghost',
-          onclick: () => {
-            for (const t of teams) {
-              if (allOpen) ui.offOpen.delete(t.id);
-              else ui.offOpen.add(t.id);
-            }
-            saveUi();
-            fillOffList();
-          },
-        }, allOpen ? 'Thu gọn tất cả' : 'Mở tất cả') : null),
-      ...(teams.length ? teams.map(renderOffPanel)
-        : [el('div', { class: 'empty' }, all.length ? 'Không có team nào khớp bộ lọc ở panel Tổng hợp.' : 'Chưa có team nào.')]),
-    );
-  }
-
-  /** Mở panel của team và cuộn tới (bỏ lọc nếu team đang bị ẩn). */
+  /** Chuyển sang "Theo team", mở chi tiết của team và cuộn tới (bỏ lọc nếu team đang bị ẩn). */
   function openOffTeam(t) {
     ui.offOpen.add(t.id);
     saveUi();
+    offView.by = 'team';
     if (!offMatches(t)) offView = { ...offView, cat: '', q: '', pair: '' };
     render();
     const node = document.getElementById('off-' + t.id);
@@ -2842,14 +2940,14 @@
       dlg.replaceChildren(
         dialogHead('Tạo team mới', () => dlg),
         el('p', { class: 'hint' }, 'Chọn tối đa 3 pair từ Rosters và move level required (kéo nút ⠿ để đổi vị trí). '
-          + 'Tạo xong team thành một panel trong "Team đã tạo" để thêm record, grid, video.'),
+          + 'Tạo xong, team hiện trong bảng và tự mở để thêm record, grid, video.'),
         el('div', { class: 'off-settings' },
           el('label', null, 'Tên team',
             el('input', { class: 'edit', value: d.name, placeholder: 'vd Mega Ray nuke', dataset: { fk: 'name' }, oninput: (e) => { d.name = e.target.value; } })),
           el('label', null, 'Loại', catSelect(d, offAutoCategory(d), draw, { dataset: { fk: 'cat' } })),
           roundPicker(d),
-          el('label', null, 'Link grid', linkField(d, 'grid', 'grid', { dataset: { fk: 'grid' } })),
-          el('label', null, 'Link video', linkField(d, 'video', 'video', { dataset: { fk: 'video' } }))),
+          el('label', { class: 'span3' }, 'Link grid', linkField(d, 'grid', 'grid', { dataset: { fk: 'grid' } })),
+          el('label', { class: 'span3' }, 'Link video', linkField(d, 'video', 'video', { dataset: { fk: 'video' } }))),
         el('div', { class: 'slots' }, d.slots.map((s, i) => renderSlot(d, s, i, draw, true))),
         dup ? el('div', { class: 'warn off-dup' }, `Đã có team cùng bộ pair: "${offName(dup)}". Vẫn tạo được nếu bạn muốn tách phương án.`) : '',
         el('div', { class: 'dlg-foot' },
@@ -2863,69 +2961,6 @@
     draw();
     dlg.showModal();
     refocus(dlg, 'name');
-  }
-
-  /** Panel của một team: đầu panel luôn hiện (bấm để mở / thu gọn), thân panel để sửa team và record. */
-  function renderOffPanel(t) {
-    const open = ui.offOpen.has(t.id);
-    const card = el('section', { class: 'card off-team' + (open ? ' open' : ''), id: 'off-' + t.id, dataset: { cat: offCategory(t) || 'NONE' } });
-    const rerender = (focusKey) => {
-      const fk = focusKey || activeFk(card);
-      const fresh = renderOffPanel(t);
-      card.replaceWith(fresh);
-      refocus(fresh, fk);
-      save();
-      fillOffSummary();
-    };
-    const toggle = () => {
-      if (ui.offOpen.has(t.id)) ui.offOpen.delete(t.id);
-      else ui.offOpen.add(t.id);
-      saveUi();
-      rerender('toggle');
-    };
-    const head = offPanelHead(t, open, toggle);
-    card.append(head);
-    if (open) {
-      card.append(offPanelBody(t, rerender));
-      // Sửa tên / điểm / link xong (blur) thì cập nhật đầu panel và Tổng hợp. Giữ nguyên nút mở / thu gọn
-      // và chờ thả chuột, để cú click gây ra blur đó (vd bấm thu gọn) không bị mất vì nút bị vẽ lại.
-      card.addEventListener('change', () => afterPointer(() => {
-        if (!card.isConnected) return;
-        const btn = head.querySelector('.off-toggle');
-        btn.querySelector('.off-name').textContent = offName(t);
-        while (btn.nextSibling) btn.nextSibling.remove();
-        btn.after(...[...offPanelHead(t, true, toggle).children].slice(1));
-        card.dataset.cat = offCategory(t) || 'NONE';
-        fillOffSummary();
-      }));
-    }
-    return card;
-  }
-
-  function offPanelHead(t, open, toggle) {
-    const best = offBest(t);
-    const links = t.links.filter((l) => safeHref(l.url));
-    return el('div', {
-      class: 'off-head',
-      onclick: (e) => { if (!e.target.closest('a, button, input, select')) toggle(); },
-    },
-      el('button', { type: 'button', class: 'off-toggle', 'aria-expanded': String(open), dataset: { fk: 'toggle' }, onclick: toggle },
-        ic('chevron'), el('span', { class: 'off-name' }, offName(t))),
-      catChip(offCategory(t), !t.category),
-      roundChips(t),
-      el('div', { class: 'off-minis' }, t.slots.map((s, i) => {
-        const p = s.pair && idx.pair.get(s.pair);
-        return p
-          ? el('span', { class: 'off-mini', title: pairLabel(p) }, CATALOG.length ? avatar(iconFor(p), 30) : null,
-            el('span', { class: 'off-mini-name' }, shortPair(p)))
-          : el('span', { class: 'off-mini empty' }, `Slot ${i + 1} trống`);
-      })),
-      el('span', { class: 'off-meta' },
-        teamPill(evalTeam(t)),
-        el('span', null, `${t.records.length} record`),
-        best != null ? el('span', { title: 'Điểm cao nhất trong các record' }, `cao nhất ${fmtShort(best)}`) : null),
-      links.length ? el('div', { class: 'off-links' }, links.map(linkChip)) : null,
-    );
   }
 
   function offPanelBody(t, rerender) {
@@ -2954,7 +2989,8 @@
             ui.offOpen.delete(t.id);
             saveUi();
             save();
-            render();
+            renderTabs(currentRoute());
+            fillOffSummary();
           },
         }, 'Xóa team')),
     );
@@ -3011,7 +3047,7 @@
       cell(r, 'boss', 'Boss / gym', { list: ids.boss }),
       cell(r, 'member', 'Member', { list: ids.member }),
       el('td', null, el('input', {
-        class: 'edit num', value: r.points != null ? fmtNum(r.points) : '', inputmode: 'numeric', placeholder: '0',
+        class: 'edit num', value: r.points != null ? fmtNum(r.points) : '', inputmode: 'numeric', placeholder: 'điểm…',
         'aria-label': 'Điểm', dataset: { fk: `${r.id}-points` },
         onchange: (e) => {
           const digits = e.target.value.replace(/\D/g, '');
