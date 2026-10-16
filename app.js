@@ -315,15 +315,36 @@
     }
   }
 
+  /*
+   * Dữ liệu chuẩn (seed.js) có seedVersion. SEED_KEY ghi dữ liệu trong trình duyệt dựa trên bản chuẩn nào và
+   * đã sửa chưa: chưa sửa thì tự nạp bản chuẩn mới; đã sửa (hoặc không rõ) thì chỉ báo để người dùng tự chọn.
+   */
+  const SEED_KEY = 'gvg-team-planner/seed';
+  const SEED_VERSION = str(window.GVG_SEED && window.GVG_SEED.seedVersion);
+  let seedInfo = null;
+  try { seedInfo = JSON.parse(localStorage.getItem(SEED_KEY)); } catch (_) { /* không có */ }
+  let seedStatus = ''; // 'auto' = vừa tự nạp bản chuẩn mới, 'notice' = có bản chuẩn mới nhưng dữ liệu đã sửa
+
+  function writeSeedInfo(edited) {
+    seedInfo = { v: SEED_VERSION, edited };
+    try { localStorage.setItem(SEED_KEY, JSON.stringify(seedInfo)); } catch (_) { /* bỏ qua */ }
+  }
+
   function load() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const s = normalize(JSON.parse(raw));
         s.bosses = s.bosses || [];
-        return s;
+        if (!SEED_VERSION || (seedInfo && seedInfo.v === SEED_VERSION)) return s;
+        if (!seedInfo || seedInfo.edited) {
+          seedStatus = 'notice';
+          return s;
+        }
+        seedStatus = 'auto';
       }
     } catch (_) { /* fall through to seed */ }
+    writeSeedInfo(false);
     return seedState();
   }
 
@@ -337,7 +358,9 @@
   }
   reindex();
 
-  function save() {
+  /** `pristine` = vừa nạp dữ liệu chuẩn, chưa phải thay đổi của người dùng. */
+  function save(pristine) {
+    if (!pristine && seedInfo && !seedInfo.edited) writeSeedInfo(true);
     clearTimeout(save.timer);
     save.timer = setTimeout(() => {
       const status = $('#saveStatus');
@@ -348,6 +371,36 @@
         status.textContent = 'Không lưu được vào trình duyệt – hãy Export JSON';
       }
     }, 250);
+  }
+
+  /** Thay dữ liệu đang dùng bằng dữ liệu chuẩn (seed.js). */
+  function useSeed() {
+    state = seedState();
+    reindex();
+    writeSeedInfo(false);
+    save(true);
+    render();
+    const n = $('#seedNotice');
+    if (n) n.remove();
+  }
+
+  /** Báo có dữ liệu chuẩn mới khi dữ liệu trong trình duyệt đã được sửa – không tự ghi đè. */
+  function showSeedNotice() {
+    const seedUpdated = str(window.GVG_SEED && window.GVG_SEED.updated);
+    const box = el('div', { id: 'seedNotice', class: 'seed-notice', role: 'status' },
+      el('strong', null, 'Có dữ liệu chuẩn mới' + (seedUpdated ? ` (cập nhật ${seedUpdated})` : '')),
+      el('span', null, 'Dữ liệu bạn đang xem là bản đã sửa trên trình duyệt này.'),
+      el('div', { class: 'btn-row' },
+        el('button', {
+          class: 'btn btn-primary',
+          onclick: () => {
+            if (!confirm('Thay dữ liệu trên trình duyệt này bằng dữ liệu chuẩn? Thay đổi chưa Export sẽ mất (nên Export trước).')) return;
+            useSeed();
+            toast('Đã nạp dữ liệu chuẩn', 'ok');
+          },
+        }, 'Nạp dữ liệu chuẩn'),
+        el('button', { class: 'btn', onclick: () => { writeSeedInfo(true); box.remove(); } }, 'Giữ bản của tôi')));
+    $('.side-foot').prepend(box);
   }
 
   function allSlots() {
@@ -986,13 +1039,11 @@
       el('button', { class: 'btn', onclick: addMember }, ic('plus'), 'Member'),
       el('button', { class: 'btn', onclick: addGroup }, ic('plus'), 'Type'),
       el('button', {
-        class: 'btn btn-ghost btn-danger', title: 'Bỏ mọi thay đổi, nạp lại dữ liệu từ file Excel gốc',
+        class: 'btn btn-ghost btn-danger', title: 'Bỏ mọi thay đổi, nạp lại dữ liệu chuẩn',
         onclick: () => {
-          if (!confirm('Khôi phục dữ liệu gốc (từ file Excel)? Mọi thay đổi chưa Export sẽ mất.')) return;
-          state = seedState();
-          save();
-          render();
-          toast('Đã khôi phục dữ liệu gốc', 'ok');
+          if (!confirm('Khôi phục dữ liệu chuẩn? Mọi thay đổi chưa Export sẽ mất.')) return;
+          useSeed();
+          toast('Đã khôi phục dữ liệu chuẩn', 'ok');
         },
       }, 'Reset'),
     );
@@ -3727,4 +3778,6 @@
   window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
   $('#saveStatus').textContent = 'Tự lưu trên trình duyệt này';
   render();
+  if (seedStatus === 'auto') toast('Đã nạp dữ liệu chuẩn mới' + (state.updated ? ` (cập nhật ${state.updated})` : ''), 'ok');
+  if (seedStatus === 'notice') showSeedNotice();
 })();

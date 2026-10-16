@@ -177,6 +177,13 @@ kbd {
 .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .btn-row .btn, .btn-row .dropdown, .btn-row .dropdown .btn { width: 100%; }
 .save-status { font-size: 11px; color: var(--muted); text-align: center; }
+.seed-notice {
+  display: grid; gap: 6px; padding: 10px; border-radius: 8px; font-size: 12px; line-height: 1.4;
+  background: var(--accent-soft); border: 1px solid var(--accent); color: var(--text-2);
+}
+.seed-notice strong { color: var(--text); font-size: 13px; }
+.seed-notice .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.seed-notice .btn { font-size: 12px; padding-inline: 6px; }
 
 .theme-switch {
   display: grid; grid-template-columns: repeat(3, 1fr); padding: 3px; gap: 2px;
