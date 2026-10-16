@@ -453,6 +453,8 @@ tr.hidden { display: none; }
 .team-minis { display: inline-flex; align-items: center; gap: 4px; flex: none; }
 .team-minis .off-req { margin-left: 4px; font-size: 12px; font-weight: 700; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .team.collapsed .team-head .note { min-width: 60px; }
+.team-head .team-links { flex: 1; min-width: 0; }
+.team .off-sec { margin-top: -2px; }
 .team-head .label { font-weight: 700; width: 96px; flex: none; }
 .team-head .note { flex: 1; color: var(--muted); font-size: 12px; }
 .slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }

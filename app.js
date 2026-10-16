@@ -180,7 +180,7 @@
   }
 
   function newTeam(label) {
-    return { id: uid('t'), label, note: '', slots: [emptySlot(), emptySlot(), emptySlot()] };
+    return { id: uid('t'), label, note: '', links: [], slots: [emptySlot(), emptySlot(), emptySlot()] };
   }
 
   function newBoss(name) {
@@ -210,6 +210,7 @@
         category: str(bl.category) || (BLOCK_DEFS[i] || {}).category || 'PHYSICAL',
         teams: (bl.teams || []).map((t) => ({
           id: str(t.id) || uid('t'), label: str(t.label), note: str(t.note),
+          links: (Array.isArray(t.links) ? t.links : []).map(normLink),
           slots: [0, 1, 2].map((k) => normSlot((t.slots || [])[k])),
         })),
       })),
@@ -1999,6 +2000,7 @@
       rerender('toggle');
     };
     const result = evalTeam(team);
+    const links = team.links.filter((l) => safeHref(l.url));
 
     const head = el('div', {
       class: 'team-head',
@@ -2011,7 +2013,10 @@
       bound(team, 'label', { class: 'edit label' }),
       teamPill(result),
       open ? null : teamMinis(team),
-      bound(team, 'note', { class: 'edit note', placeholder: 'Ghi chú team…' }),
+      // Thu gọn: hiện link grid / video thay cho ghi chú (chưa có link thì vẫn hiện ghi chú)
+      !open && links.length
+        ? el('div', { class: 'off-links team-links', title: team.note || null }, links.map(linkChip))
+        : bound(team, 'note', { class: 'edit note', placeholder: 'Ghi chú team…' }),
       el('button', {
         class: 'icon-btn', title: 'Xóa phương án này', 'aria-label': 'Xóa phương án này',
         onclick: () => {
@@ -2028,6 +2033,7 @@
     card.append(head);
     if (open) {
       card.append(el('div', { class: 'slots' }, team.slots.map((s, i) => renderSlot(team, s, i, rerender))),
+        offLinkEditor(team, rerender),
         renderResult(team, result));
     }
     return card;
