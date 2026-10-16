@@ -454,6 +454,10 @@ tr.hidden { display: none; }
 .team-minis .off-req { margin-left: 4px; font-size: 12px; font-weight: 700; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .team.collapsed .team-head .note { min-width: 60px; }
 .team-head .team-links { flex: 1; min-width: 0; }
+.off-link.empty {
+  border: 1px dashed currentColor; background: transparent; opacity: .55; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600;
+}
+.off-link.empty:hover { opacity: 1; text-decoration: none; }
 .team .off-sec { margin-top: -2px; }
 .team-head .label { font-weight: 700; width: 96px; flex: none; }
 .team-head .note { flex: 1; color: var(--muted); font-size: 12px; }

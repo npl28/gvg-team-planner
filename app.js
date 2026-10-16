@@ -2013,10 +2013,24 @@
       bound(team, 'label', { class: 'edit label' }),
       teamPill(result),
       open ? null : teamMinis(team),
-      // Thu gọn: hiện link grid / video thay cho ghi chú (chưa có link thì vẫn hiện ghi chú)
-      !open && links.length
-        ? el('div', { class: 'off-links team-links', title: team.note || null }, links.map(linkChip))
-        : bound(team, 'note', { class: 'edit note', placeholder: 'Ghi chú team…' }),
+      // Thu gọn: luôn hiện Grid / Video thay cho ghi chú; loại nào chưa có link thì là nút "+" mở thẻ để thêm
+      open
+        ? bound(team, 'note', { class: 'edit note', placeholder: 'Ghi chú team…' })
+        : el('div', { class: 'off-links team-links', title: team.note ? 'Ghi chú: ' + team.note : null },
+          ['grid', 'video'].map((kind) => {
+            const have = links.filter((l) => l.kind === kind);
+            if (have.length) return have.map(linkChip);
+            return el('button', {
+              type: 'button', class: 'off-link empty' + (kind === 'video' ? ' video' : ''),
+              title: kind === 'video' ? 'Thêm link video' : 'Thêm link grid',
+              onclick: () => {
+                team.links.push(normLink({ kind }));
+                ui.teamOpen[team.id] = true;
+                saveUi();
+                rerender(`link${team.links.length - 1}`);
+              },
+            }, ic('plus'), kind === 'video' ? 'Video' : 'Grid');
+          })),
       el('button', {
         class: 'icon-btn', title: 'Xóa phương án này', 'aria-label': 'Xóa phương án này',
         onclick: () => {
