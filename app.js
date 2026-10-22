@@ -375,18 +375,22 @@
       } catch (_) {
         status.textContent = 'Không lưu được vào trình duyệt – hãy Export JSON';
       }
+      updateOffShared();
     }, 250);
   }
 
-  /** Thay dữ liệu đang dùng bằng dữ liệu chuẩn (seed.js). */
+  /** Thay dữ liệu đang dùng bằng dữ liệu chuẩn (seed.js) và bảng team OFF-TYPE chung. */
   function useSeed() {
     state = seedState();
     reindex();
+    useSharedOff();
     writeSeedInfo(false);
     save(true);
     render();
-    const n = $('#seedNotice');
-    if (n) n.remove();
+    for (const id of ['#seedNotice', '#offNotice']) {
+      const n = $(id);
+      if (n) n.remove();
+    }
   }
 
   /** Báo có dữ liệu chuẩn mới khi dữ liệu trong trình duyệt đã được sửa – không tự ghi đè. */
@@ -405,6 +409,94 @@
           },
         }, 'Nạp dữ liệu chuẩn'),
         el('button', { class: 'btn', onclick: () => { writeSeedInfo(true); box.remove(); } }, 'Giữ bản của tôi')));
+    $('.side-foot').prepend(box);
+  }
+
+  /*
+   * Bảng team OFF-TYPE chung (offteams.js, sinh từ data/offteams.json) – tách khỏi seed, có phiên bản riêng (offVersion).
+   * OFF_KEY ghi bản chung đang dùng và chữ ký team lúc nạp: team chưa sửa thì tự nạp bản chung mới, đã sửa thì chỉ báo.
+   */
+  const OFF_KEY = 'gvg-team-planner/offteams';
+  const SHARED_OFF = window.GVG_OFFTEAMS && Array.isArray(window.GVG_OFFTEAMS.teams) ? window.GVG_OFFTEAMS : null;
+  const OFF_VERSION = str(SHARED_OFF && SHARED_OFF.offVersion);
+  let offInfo = null;
+  try { offInfo = JSON.parse(localStorage.getItem(OFF_KEY)); } catch (_) { /* không có */ }
+
+  /** Chữ ký nội dung team OFF-TYPE – so để biết đã sửa so với bảng chung chưa. */
+  function offSig(teams) {
+    const s = JSON.stringify(teams.map((t) => ({
+      ...t, slots: t.slots.map((x) => [x.pair, x.pair ? '' : x.pairName, x.req, x.note]),
+    })));
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) | 0;
+    return `${s.length}:${h >>> 0}`;
+  }
+
+  /** `kept` = người dùng chọn giữ bản của mình: bản chung sau này chỉ báo, không tự nạp. */
+  function writeOffInfo(kept) {
+    offInfo = { v: OFF_VERSION, sig: kept ? '' : offSig(state.offTeams) };
+    try { localStorage.setItem(OFF_KEY, JSON.stringify(offInfo)); } catch (_) { /* bỏ qua */ }
+  }
+
+  /** Team của bảng chung, slot khớp lại theo Rosters máy này (id, tên, icon). */
+  function sharedOffTeams() {
+    if (!SHARED_OFF) return [];
+    const look = rosterLookup();
+    return SHARED_OFF.teams.map((raw) => {
+      const t = normOffTeam(raw);
+      t.slots = [0, 1, 2].map((k) => resolveOffSlot((raw.slots || [])[k] || {}, look));
+      return t;
+    });
+  }
+
+  const offIsShared = () => offSig(state.offTeams) === offSig(sharedOffTeams());
+
+  function useSharedOff() {
+    if (!SHARED_OFF) return;
+    state.offTeams = sharedOffTeams();
+    writeOffInfo(false);
+  }
+
+  /** Lúc mở app: '' = không có gì mới, 'auto' = vừa thay bằng bảng chung mới, 'notice' = team đã sửa, chỉ báo. */
+  function syncSharedOff() {
+    if (!SHARED_OFF || (offInfo && offInfo.v === OFF_VERSION)) return '';
+    const shared = sharedOffTeams();
+    const cur = offSig(state.offTeams);
+    const same = cur === offSig(shared);
+    // Chưa có OFF_KEY (bản app cũ, team nằm trong seed): coi là chưa sửa nếu dữ liệu vẫn là bản chuẩn
+    const edited = offInfo ? offInfo.sig !== cur : state.offTeams.length > 0 && !(seedInfo && seedInfo.edited === false);
+    if (!same && edited) return 'notice';
+    const had = state.offTeams.length > 0;
+    state.offTeams = shared;
+    writeOffInfo(false);
+    save(true);
+    return had && !same ? 'auto' : '';
+  }
+
+  function loadSharedOff() {
+    useSharedOff();
+    save(true);
+    render();
+    const n = $('#offNotice');
+    if (n) n.remove();
+    toast('Đã nạp bảng team OFF-TYPE chung', 'ok');
+  }
+
+  /** Báo có bảng OFF-TYPE chung mới khi team trên trình duyệt đã được sửa – không tự ghi đè. */
+  function showOffNotice() {
+    const upd = str(SHARED_OFF.updated);
+    const box = el('div', { id: 'offNotice', class: 'seed-notice', role: 'status' },
+      el('strong', null, 'Có bảng team OFF-TYPE chung mới' + (upd ? ` (cập nhật ${upd})` : '')),
+      el('span', null, 'Team OFF-TYPE trên trình duyệt này đã được sửa nên chưa tự thay.'),
+      el('div', { class: 'btn-row' },
+        el('button', {
+          class: 'btn btn-primary',
+          onclick: () => {
+            if (!confirm('Thay team OFF-TYPE trên trình duyệt này bằng bảng chung? Team chưa Export sẽ mất (nên Export team trước).')) return;
+            loadSharedOff();
+          },
+        }, 'Nạp bảng chung'),
+        el('button', { class: 'btn', onclick: () => { writeOffInfo(true); box.remove(); updateOffShared(); } }, 'Giữ bản của tôi')));
     $('.side-foot').prepend(box);
   }
 
@@ -2607,6 +2699,7 @@
     offRefs = {
       counts,
       sub: el('span', { class: 'page-sub' }),
+      shared: el('span', { class: 'off-shared' }),
       sum: el('div', { class: 'off-sum-body' }),
       openAll: el('button', { type: 'button', class: 'btn btn-sm btn-ghost off-open-all', onclick: toggleAllOff }),
     };
@@ -2623,9 +2716,10 @@
       }),
     );
     fillOffSummary();
+    updateOffShared();
     return el('div', { class: 'off-page' },
       el('div', { class: 'page-head' },
-        el('h1', null, 'OFF-TYPE builder'), offRefs.sub,
+        el('h1', null, 'OFF-TYPE builder'), offRefs.sub, offRefs.shared,
         el('span', { class: 'spacer' }),
         el('button', { class: 'btn', title: 'Nạp file team OFF-TYPE (chọn được nhiều file)', onclick: () => $('#fileInput').click() },
           ic('upload'), 'Import team'),
@@ -2656,6 +2750,27 @@
     const allOpen = teams.length > 0 && teams.every((t) => ui.offOpen.has(t.id));
     offRefs.openAll.textContent = allOpen ? 'Thu gọn tất cả' : 'Mở tất cả';
     offRefs.openAll.hidden = !teams.length;
+  }
+
+  /** Cạnh tiêu đề: đang dùng đúng bảng chung, hay đã sửa khác bảng chung (kèm nút nạp lại). */
+  function updateOffShared() {
+    if (!offRefs) return;
+    if (!SHARED_OFF) { offRefs.shared.hidden = true; return; }
+    const upd = str(SHARED_OFF.updated);
+    offRefs.shared.replaceChildren(...(offIsShared()
+      ? [el('span', {
+        class: 'pill ok', title: 'Team OFF-TYPE trên trình duyệt này trùng với bảng chung của guild',
+      }, 'Bảng chung' + (upd ? ` · cập nhật ${upd}` : ''))]
+      : [el('span', {
+        class: 'pill warn', title: 'Bạn đã sửa team OFF-TYPE trên trình duyệt này. Muốn đưa vào bảng chung: Export team rồi gửi cho người quản lý.',
+      }, 'Đã sửa so với bảng chung'),
+      el('button', {
+        type: 'button', class: 'btn btn-sm btn-ghost', title: 'Bỏ thay đổi, dùng lại bảng chung',
+        onclick: () => {
+          if (!confirm('Thay team OFF-TYPE trên trình duyệt này bằng bảng chung? Team chưa Export sẽ mất (nên Export team trước).')) return;
+          loadSharedOff();
+        },
+      }, 'Nạp bảng chung')]));
   }
 
   function toggleAllOff() {
@@ -3966,7 +4081,10 @@
 
   window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
   $('#saveStatus').textContent = 'Tự lưu trên trình duyệt này';
+  const offStatus = syncSharedOff();
   render();
+  if (offStatus === 'auto') toast('Đã nạp bảng team OFF-TYPE chung mới' + (SHARED_OFF.updated ? ` (cập nhật ${SHARED_OFF.updated})` : ''), 'ok');
+  if (offStatus === 'notice') showOffNotice();
   if (seedStatus === 'auto') toast('Đã nạp dữ liệu chuẩn mới' + (state.updated ? ` (cập nhật ${state.updated})` : ''), 'ok');
   if (seedStatus === 'notice') showSeedNotice();
 })();

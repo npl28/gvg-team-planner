@@ -263,6 +263,7 @@ textarea.note-area { display: block; resize: none; overflow-y: hidden; line-heig
 .page-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .page-head h1 { font-size: 22px; line-height: 1.2; margin: 0; letter-spacing: -.015em; }
 .page-sub { color: var(--muted); font-size: 13px; }
+.off-shared { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .spacer { flex: 1; }
 .nowrap { white-space: nowrap; }
 .muted { color: var(--muted); }
