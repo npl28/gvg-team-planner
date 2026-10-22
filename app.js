@@ -421,6 +421,8 @@
   const OFF_VERSION = str(SHARED_OFF && SHARED_OFF.offVersion);
   let offInfo = null;
   try { offInfo = JSON.parse(localStorage.getItem(OFF_KEY)); } catch (_) { /* không có */ }
+  // offSig của team OFF-TYPE từng nằm trong seed.js (bản 2026-10-16): ai còn giữ nguyên là chưa sửa team
+  const LEGACY_OFF_SIGS = ['3559:868555696'];
 
   /** Chữ ký nội dung team OFF-TYPE – so để biết đã sửa so với bảng chung chưa. */
   function offSig(teams) {
@@ -463,8 +465,10 @@
     const shared = sharedOffTeams();
     const cur = offSig(state.offTeams);
     const same = cur === offSig(shared);
-    // Chưa có OFF_KEY (bản app cũ, team nằm trong seed): coi là chưa sửa nếu dữ liệu vẫn là bản chuẩn
-    const edited = offInfo ? offInfo.sig !== cur : state.offTeams.length > 0 && !(seedInfo && seedInfo.edited === false);
+    // Chưa có OFF_KEY (bản app cũ, team nằm trong seed): coi là chưa sửa nếu team vẫn y như seed cũ
+    // hoặc dữ liệu chưa sửa gì – sửa Rosters không tính là sửa team OFF-TYPE
+    const edited = offInfo ? offInfo.sig !== cur
+      : state.offTeams.length > 0 && !LEGACY_OFF_SIGS.includes(cur) && !(seedInfo && seedInfo.edited === false);
     if (!same && edited) return 'notice';
     const had = state.offTeams.length > 0;
     state.offTeams = shared;
