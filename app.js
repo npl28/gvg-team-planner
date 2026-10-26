@@ -228,7 +228,15 @@
       id: str(r.id) || uid('r'), season: str(r.season), round: str(r.round), boss: str(r.boss), member: str(r.member),
       points: r.points !== '' && r.points != null && Number.isFinite(pts) ? pts : null,
       grid: str(r.grid).trim(), video: str(r.video).trim(), note: str(r.note),
+      style: OFF_STYLES.includes(r.style) ? r.style : '', moves: normMoves(r.moves),
     };
+  }
+
+  /** Move level dạng "5-5-3": nhận "553", "5 5 3", "5/5/3"… */
+  function normMoves(v) {
+    const t = str(v).trim();
+    if (/^\d{3}$/.test(t)) return t.split('').join('-');
+    return t.split(/[^\d]+/).filter(Boolean).join('-');
   }
 
   /** Round mà team OFF-TYPE clear được (checkbox trong team). */
@@ -431,8 +439,9 @@
   /** Chữ ký nội dung team OFF-TYPE – so để biết đã sửa so với bảng chung chưa. */
   function offSig(teams) {
     // Chưa đặt cách đánh thì bỏ khỏi chữ ký để giữ nguyên chữ ký của bản app trước khi có trường này
+    const omitEmpty = (o, keys) => Object.fromEntries(Object.entries(o).filter(([k, v]) => v || !keys.includes(k)));
     const s = JSON.stringify(teams.map(({ style, ...t }) => ({
-      ...t, ...(style ? { style } : {}), slots: t.slots.map((x) => [x.pair, x.pair ? '' : x.pairName, x.req, x.note]),
+      ...t, ...(style ? { style } : {}), records: t.records.map((r) => omitEmpty(r, ['style', 'moves'])), slots: t.slots.map((x) => [x.pair, x.pair ? '' : x.pairName, x.req, x.note]),
     })));
     let h = 5381;
     for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) | 0;
@@ -2665,7 +2674,7 @@
     const words = fold(f.q).split(/\s+/).filter(Boolean);
     if (!words.length) return true;
     const hay = fold([offName(t), t.note, t.style, ...t.rounds, ...offPairs(t).map(pairLabel),
-      ...t.records.flatMap((r) => [r.season, r.round, r.boss, r.member, r.note])].join(' '));
+      ...t.records.flatMap((r) => [r.season, r.round, r.boss, r.member, r.style, r.moves, r.note])].join(' '));
     return words.every((w) => hay.includes(w));
   }
 
@@ -3199,7 +3208,12 @@
 
     const add = () => {
       const last = t.records[0];
-      const r = normRecord({ season: last ? last.season : SEASONS.length ? SEASONS[SEASONS.length - 1].name : '' });
+      // Cách đánh và move level lấy sẵn theo team, đánh khác thì sửa lại trong record
+      const req = offReqText(t);
+      const r = normRecord({
+        season: last ? last.season : SEASONS.length ? SEASONS[SEASONS.length - 1].name : '',
+        style: t.style, moves: req.includes('–') ? '' : req,
+      });
       t.records.unshift(r);
       rerender(`${r.id}-round`);
     };
@@ -3210,6 +3224,16 @@
       cell(r, 'round', 'Round / ngày'),
       cell(r, 'boss', 'Boss / gym', { list: ids.boss }),
       cell(r, 'member', 'Member', { list: ids.member }),
+      el('td', null, el('select', {
+        class: 'edit', 'aria-label': 'Cách đánh', dataset: { fk: `${r.id}-style` },
+        onchange: (e) => { r.style = e.target.value; save(); },
+      }, el('option', { value: '' }, '–'),
+      OFF_STYLES.map((x) => el('option', { value: x, selected: r.style === x }, `${x} · ${styleTickets(x)} vé`)))),
+      el('td', null, el('input', {
+        class: 'edit num', value: r.moves, inputmode: 'numeric', 'aria-label': 'Move level',
+        placeholder: offReqText(t), title: 'Move level dùng trong trận (trống = như team)', dataset: { fk: `${r.id}-moves` },
+        onchange: (e) => { r.moves = normMoves(e.target.value); e.target.value = r.moves; save(); },
+      })),
       el('td', null, el('input', {
         class: 'edit num', value: r.points != null ? fmtNum(r.points) : '', inputmode: 'numeric', placeholder: 'điểm…',
         'aria-label': 'Điểm', dataset: { fk: `${r.id}-points` },
@@ -3240,9 +3264,9 @@
       datalists,
       rows.length
         ? el('div', { class: 'scroll' }, resizableTable(el('table', { class: 'matrix off-records' },
-          el('thead', null, el('tr', null, ['Mùa', 'Round', 'Boss / gym', 'Member', 'Điểm', 'Grid', 'Video', 'Ghi chú', '']
-            .map((h, i) => el('th', { class: i === 4 ? 'num' : null }, h)))),
-          el('tbody', null, rows)), 'off-records', [8]))
+          el('thead', null, el('tr', null, ['Mùa', 'Round', 'Boss / gym', 'Member', 'Cách đánh', 'Move level', 'Điểm', 'Grid', 'Video', 'Ghi chú', '']
+            .map((h, i) => el('th', { class: i === 5 || i === 6 ? 'num' : null }, h)))),
+          el('tbody', null, rows)), 'off-records2', [10]))
         : el('div', { class: 'empty' }, 'Chưa có record – bấm "+ Record" để ghi lại lần team được dùng (mùa, boss, member, điểm, grid, video).'));
   }
 

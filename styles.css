@@ -1001,17 +1001,20 @@ table.off-accordion .off-detail > td { padding: 0 0 0 4px; overflow: visible; ba
 .off-input, .off-link-row .link-field, .off-records .edit { background: var(--input-bg); }
 .off-link-row .link-field, .off-records .link-field { border-radius: 5px; background: var(--input-bg); }
 .off-link-row .link-field .edit, .off-records .link-field .edit { background: transparent; }
-table.off-records { min-width: 1040px; }
+table.off-records { min-width: 1340px; }
 .off-records th, .off-records td { padding: 4px; vertical-align: middle; }
 .off-records th { padding: 6px 8px; }
-.off-records th:nth-child(1) { width: 170px; }
+.off-records th:nth-child(1) { width: 162px; }
 .off-records th:nth-child(2) { width: 90px; }
-.off-records th:nth-child(3) { width: 160px; }
-.off-records th:nth-child(4) { width: 130px; }
-.off-records th:nth-child(5) { width: 110px; }
-.off-records th:nth-child(6), .off-records th:nth-child(7) { width: 170px; }
+.off-records th:nth-child(3) { width: 140px; }
+.off-records th:nth-child(4) { width: 110px; }
+.off-records th:nth-child(5) { width: 108px; }
+.off-records th:nth-child(6) { width: 86px; }
+.off-records th:nth-child(7) { width: 100px; }
+.off-records th:nth-child(8), .off-records th:nth-child(9) { width: 150px; }
 .off-records th:last-child { width: 32px; }
 .off-records .edit.num { text-align: right; font-variant-numeric: tabular-nums; }
+.off-records select.edit { width: 100%; min-height: 30px; padding: 4px 6px; color: var(--text); font: inherit; font-size: 13px; }
 
 /* Bảng kéo đổi độ rộng cột: tay nắm ở mép phải tiêu đề; sau khi đo, bảng dùng độ rộng cố định từng cột */
 table.col-resizable th { position: relative; }
