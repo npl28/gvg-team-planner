@@ -854,6 +854,9 @@ tr.has-note td { background: color-mix(in srgb, var(--warn-bg) 60%, transparent)
 .off-open-all[hidden] { display: none; }
 .sort-field { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
 .sort-field .field { padding-left: 6px; }
+.off-selects { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.off-select { padding: 4px 8px; font-size: 13px; color: var(--text-2); max-width: 190px; }
+.off-select.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .off-empty { padding: 14px 16px; }
 .off-filter {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px;
@@ -864,6 +867,11 @@ tr.has-note td { background: color-mix(in srgb, var(--warn-bg) 60%, transparent)
 .off-table td.num, .off-table th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .off-table tr.off-group td { background: var(--surface-2); padding: 6px 14px; }
 .off-table td.off-req { font-weight: 700; letter-spacing: .02em; }
+.off-style {
+  padding: 1px 7px; border-radius: 4px; font-size: 12px; font-weight: 700; line-height: 18px;
+  background: var(--surface-3); color: var(--text); letter-spacing: .02em;
+}
+.off-table td.off-tickets { font-weight: 700; }
 .off-table tr.on td { background: var(--accent-soft); }
 .off-table .role-line { margin: 2px 0 0 4px; }
 .link-btn { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 600; cursor: pointer; text-align: left; }
@@ -896,9 +904,9 @@ button.off-mini.on { border-color: var(--accent); background: var(--accent-soft)
 
 /* Popup tạo team */
 .off-dialog { width: min(1080px, calc(100vw - 32px)); }
-.off-dialog .off-settings { margin-bottom: 14px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
-.off-dialog .off-settings > * { grid-column: span 2; }
-.off-dialog .off-settings > .span3 { grid-column: span 3; }
+.off-dialog .off-settings { margin-bottom: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.off-dialog .off-settings > * { grid-column: span 1; }
+.off-dialog .off-settings > .span3 { grid-column: span 2; }
 .off-dialog .slots { margin-bottom: 12px; }
 .off-dialog .slot { background: var(--surface); border-color: var(--border); }
 .off-dialog .off-dup { margin-bottom: 4px; }
@@ -1034,6 +1042,8 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-sel
   .off-toolbar .seg-btn { padding: 5px 8px; font-size: 12px; }
   .off-toolbar .sort-field .field { max-width: 160px; }
   .off-toolbar .search-field { grid-column: 1 / -1; }
+  .off-toolbar .off-selects { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .off-toolbar .off-select { max-width: none; width: 100%; font-size: 12px; }
   .off-toolbar .search-field .field { width: 100% !important; }
   .off-dialog .off-settings { grid-template-columns: minmax(0, 1fr); }
   .off-dialog .off-settings > *, .off-dialog .off-settings > .span3 { grid-column: auto; }
