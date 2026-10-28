@@ -18,11 +18,15 @@
     { name: 'Debuff-Paralysis', color: '#ca8a04' },
     { name: 'Debuff-Sleep', color: '#64748b' },
     { name: 'Debuff-Freeze', color: '#0891b2' },
+    { name: 'Debuff-Flinch', color: '#6366f1' },
+    { name: 'Debuff-Confusion', color: '#db2777' },
+    { name: 'Debuff-Trap', color: '#15803d' },
   ];
-  // Trạng thái bất thường gây cho đối thủ (catalog "ab") -> tag tự gắn
+  // Trạng thái bất thường / interference gây cho đối thủ (catalog "ab") -> tag tự gắn
   const DEBUFF_TAGS = {
     burn: 'Debuff-Burn', poison: 'Debuff-Poison', bad_poison: 'Debuff-Bad-Poison',
     paralysis: 'Debuff-Paralysis', sleep: 'Debuff-Sleep', freeze: 'Debuff-Freeze',
+    flinch: 'Debuff-Flinch', confusion: 'Debuff-Confusion', trap: 'Debuff-Trap',
   };
   const BLOCK_DEFS = [
     { id: 'cheer-physical', title: 'Cheer Physical', category: 'PHYSICAL' },
@@ -367,10 +371,13 @@
       st.autoTagVer = 2;
       changed = true;
     }
-    // v3: thêm tag Debuff-* cho các pair đã tự gắn trước đó
-    if (st.autoTagVer < 3) {
-      for (const e of CATALOG) if (done.has(e.id)) addTags(st, e.id, autoTagsFor(e, false));
-      st.autoTagVer = 3;
+    // v3: thêm tag Debuff-* cho các pair đã tự gắn trước đó; v4: thêm Debuff interference (flinch / confusion / trap)
+    if (st.autoTagVer < 4) {
+      const only = st.autoTagVer < 3 ? null : new Set(['Debuff-Flinch', 'Debuff-Confusion', 'Debuff-Trap']);
+      for (const e of CATALOG) {
+        if (done.has(e.id)) addTags(st, e.id, autoTagsFor(e, false).filter((n) => !only || only.has(n)));
+      }
+      st.autoTagVer = 4;
       changed = true;
     }
     for (const e of CATALOG) {
@@ -384,7 +391,7 @@
   }
 
   function emptyState() {
-    return { app: 'gvg-team-planner', version: 1, updated: '', members: [], groups: [], pairTags: {}, autoTagged: [], autoTagVer: 3, bosses: [], offTeams: [] };
+    return { app: 'gvg-team-planner', version: 1, updated: '', members: [], groups: [], pairTags: {}, autoTagged: [], autoTagVer: 4, bosses: [], offTeams: [] };
   }
 
   function seedState() {
@@ -994,7 +1001,7 @@
     const out = new Set();
     for (const k of m.capabilityKeys || []) {
       const p = k.split('.');
-      if (p.length === 5 && p[0] === 'status' && p[1] === 'abnormal' && p[2] === 'apply'
+      if (p.length === 5 && p[0] === 'status' && (p[1] === 'abnormal' || p[1] === 'hindrance') && p[2] === 'apply'
         && (p[4] === 'single_enemy' || p[4] === 'all_enemies')) out.add(p[3]);
     }
     return [...out].sort();
