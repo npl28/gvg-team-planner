@@ -3357,7 +3357,12 @@
 
   // ---------------------------------------------------------------- Icon library view
 
-  const LIB_FILTER = { q: '', type: '', role: '', withEx: true, tag: '', sort: '', only: '' };
+  // Lọc theo "ab" của catalog – giống 2 nhóm filter Inflict của pomatools
+  const DEBUFF_FILTERS = [
+    ['Status conditions', [['burn', 'Burn'], ['poison', 'Poison'], ['bad_poison', 'Bad Poison'], ['paralysis', 'Paralysis'], ['sleep', 'Sleep'], ['freeze', 'Freeze']]],
+    ['Interference', [['flinch', 'Flinch'], ['confusion', 'Confusion'], ['trap', 'Trap']]],
+  ];
+  const LIB_FILTER = { q: '', type: '', role: '', withEx: true, tag: '', debuff: '', sort: '', only: '' };
   let libFilter = { ...LIB_FILTER };
 
   function renderIconLibrary() {
@@ -3386,6 +3391,7 @@
         const r = Number(libFilter.role);
         hits = hits.filter((e) => e.role === r || (libFilter.withEx && e.xr === r));
       }
+      if (libFilter.debuff) hits = hits.filter((e) => (e.ab || []).includes(libFilter.debuff));
       if (libFilter.tag === '__none') hits = hits.filter((e) => !getTags(e.id).length);
       else if (libFilter.tag) hits = hits.filter((e) => getTags(e.id).includes(libFilter.tag));
       if (libFilter.sort === 'new') hits = [...hits].sort((a, b) => (b.d || 0) - (a.d || 0));
@@ -3423,6 +3429,10 @@
         el('option', { value: '' }, 'Tất cả tag'),
         PAIR_TAGS.map((t) => el('option', { value: t.name, selected: libFilter.tag === t.name }, t.name)),
         el('option', { value: '__none', selected: libFilter.tag === '__none' }, 'Chưa gắn tag')),
+      el('select', { class: 'field', title: 'Trạng thái pair gây cho đối thủ (theo dữ liệu pomatools)', onchange: (ev) => { libFilter.debuff = ev.target.value; fill(); } },
+        el('option', { value: '' }, 'Tất cả debuff'),
+        DEBUFF_FILTERS.map(([group, list]) => el('optgroup', { label: group },
+          list.map(([k, label]) => el('option', { value: k, selected: libFilter.debuff === k }, label))))),
       el('select', { class: 'field', title: 'Sắp xếp', onchange: (ev) => { libFilter.sort = ev.target.value; fill(); } },
         el('option', { value: '' }, 'Tên A–Z'),
         el('option', { value: 'new', selected: libFilter.sort === 'new' }, 'Mới ra trước')),
