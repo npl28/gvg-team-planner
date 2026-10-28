@@ -18,7 +18,6 @@
     { name: 'Debuff-Paralysis', color: '#ca8a04' },
     { name: 'Debuff-Sleep', color: '#64748b' },
     { name: 'Debuff-Freeze', color: '#0891b2' },
-    { name: 'Debuff-Flinch', color: '#6366f1' },
     { name: 'Debuff-Confusion', color: '#db2777' },
     { name: 'Debuff-Trap', color: '#15803d' },
   ];
@@ -26,7 +25,7 @@
   const DEBUFF_TAGS = {
     burn: 'Debuff-Burn', poison: 'Debuff-Poison', bad_poison: 'Debuff-Bad-Poison',
     paralysis: 'Debuff-Paralysis', sleep: 'Debuff-Sleep', freeze: 'Debuff-Freeze',
-    flinch: 'Debuff-Flinch', confusion: 'Debuff-Confusion', trap: 'Debuff-Trap',
+    confusion: 'Debuff-Confusion', trap: 'Debuff-Trap',
   };
   const BLOCK_DEFS = [
     { id: 'cheer-physical', title: 'Cheer Physical', category: 'PHYSICAL' },
@@ -371,9 +370,9 @@
       st.autoTagVer = 2;
       changed = true;
     }
-    // v3: thêm tag Debuff-* cho các pair đã tự gắn trước đó; v4: thêm Debuff interference (flinch / confusion / trap)
+    // v3: thêm tag Debuff-* cho các pair đã tự gắn trước đó; v4: thêm Debuff interference (confusion / trap; flinch không gắn tag)
     if (st.autoTagVer < 4) {
-      const only = st.autoTagVer < 3 ? null : new Set(['Debuff-Flinch', 'Debuff-Confusion', 'Debuff-Trap']);
+      const only = st.autoTagVer < 3 ? null : new Set(['Debuff-Confusion', 'Debuff-Trap']);
       for (const e of CATALOG) {
         if (done.has(e.id)) addTags(st, e.id, autoTagsFor(e, false).filter((n) => !only || only.has(n)));
       }
