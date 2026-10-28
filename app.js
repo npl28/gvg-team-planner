@@ -282,6 +282,8 @@
     };
     out.pairTags = normPairTags(d.pairTags);
     migrateNoteTags(out);
+    out.autoTagged = Array.isArray(d.autoTagged) ? d.autoTagged.map(str) : [];
+    autoRoleTags(out);
     if (Array.isArray(d.bosses)) out.bosses = d.bosses.map(normBoss);
     out.offTeams = Array.isArray(d.offTeams) ? d.offTeams.map(normOffTeam) : [];
     return out;
@@ -318,8 +320,31 @@
     }
   }
 
+  /**
+   * Role / EX role Strike Physical (0) -> Physical-DPS, Strike Special (1) -> Special-DPS.
+   * Mỗi pair chỉ tự gắn một lần (ghi vào autoTagged) để tag người dùng đã bỏ không bị gắn lại.
+   * Trả về true nếu có thay đổi.
+   */
+  function autoRoleTags(st) {
+    const done = new Set(st.autoTagged);
+    let changed = false;
+    for (const e of CATALOG) {
+      if (done.has(e.id)) continue;
+      done.add(e.id);
+      changed = true;
+      const add = [];
+      if (e.role === 0 || e.xr === 0) add.push('Physical-DPS');
+      if (e.role === 1 || e.xr === 1) add.push('Special-DPS');
+      if (!add.length) continue;
+      const have = st.pairTags[e.id] || [];
+      st.pairTags[e.id] = PAIR_TAGS.map((t) => t.name).filter((n) => have.includes(n) || add.includes(n));
+    }
+    st.autoTagged = [...done];
+    return changed;
+  }
+
   function emptyState() {
-    return { app: 'gvg-team-planner', version: 1, updated: '', members: [], groups: [], pairTags: {}, bosses: [], offTeams: [] };
+    return { app: 'gvg-team-planner', version: 1, updated: '', members: [], groups: [], pairTags: {}, autoTagged: [], bosses: [], offTeams: [] };
   }
 
   function seedState() {
@@ -968,6 +993,7 @@
         toast('Không lưu được kho icon vào trình duyệt – chỉ dùng được đến khi tải lại trang');
       }
       setCatalog(items);
+      if (autoRoleTags(state)) save();
       updateCatalogButton();
       if (newIds.length) {
         libFilter = { ...LIB_FILTER, only: 'new' };
