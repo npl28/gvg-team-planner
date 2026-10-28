@@ -4270,7 +4270,7 @@
    * Admin (tên "admin" + password) sửa mọi thứ; lưu cả bảng, ai vừa sửa trước thì gộp 3 chiều rồi gửi lại.
    * API_URL trống = không dùng bản chung, app chỉ lưu trên trình duyệt như cũ.
    */
-  const API_URL = '';
+  const API_URL = 'https://script.google.com/macros/s/AKfycbwhqFQ6w_Hh4-PEUq-apR68wakNRK2aoRj6GbMiP6l-6Aqp2WDxoMW3czg14DIJZoHmYw/exec';
   const SESSION_KEY = 'gvg-team-planner/session';
   const ROSTER_KEYS = ['members', 'groups', 'pairTags', 'autoTagged', 'autoTagVer'];
   const cloud = { rev: -1, base: null, busy: false, again: false, ok: false, users: [] };
