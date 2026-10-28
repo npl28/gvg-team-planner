@@ -283,6 +283,7 @@
     out.pairTags = normPairTags(d.pairTags);
     migrateNoteTags(out);
     out.autoTagged = Array.isArray(d.autoTagged) ? d.autoTagged.map(str) : [];
+    out.autoTagVer = Number(d.autoTagVer) || 0;
     autoRoleTags(out);
     if (Array.isArray(d.bosses)) out.bosses = d.bosses.map(normBoss);
     out.offTeams = Array.isArray(d.offTeams) ? d.offTeams.map(normOffTeam) : [];
@@ -328,10 +329,22 @@
   function autoRoleTags(st) {
     const done = new Set(st.autoTagged);
     let changed = false;
+    // v2: role gốc Support không tự gắn – gỡ tag bản trước đã lỡ gắn cho các pair này
+    if (st.autoTagVer < 2) {
+      for (const e of CATALOG) {
+        if (e.role !== 2 || !done.has(e.id) || !st.pairTags[e.id]) continue;
+        const left = st.pairTags[e.id].filter((n) => n !== 'Physical-DPS' && n !== 'Special-DPS');
+        if (left.length) st.pairTags[e.id] = left;
+        else delete st.pairTags[e.id];
+      }
+      st.autoTagVer = 2;
+      changed = true;
+    }
     for (const e of CATALOG) {
       if (done.has(e.id)) continue;
       done.add(e.id);
       changed = true;
+      if (e.role === 2) continue;
       const add = [];
       if (e.role === 0 || e.xr === 0) add.push('Physical-DPS');
       if (e.role === 1 || e.xr === 1) add.push('Special-DPS');
@@ -344,7 +357,7 @@
   }
 
   function emptyState() {
-    return { app: 'gvg-team-planner', version: 1, updated: '', members: [], groups: [], pairTags: {}, autoTagged: [], bosses: [], offTeams: [] };
+    return { app: 'gvg-team-planner', version: 1, updated: '', members: [], groups: [], pairTags: {}, autoTagged: [], autoTagVer: 2, bosses: [], offTeams: [] };
   }
 
   function seedState() {
