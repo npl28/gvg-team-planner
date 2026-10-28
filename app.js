@@ -12,7 +12,18 @@
     { name: 'Physical-DPS', color: '#ef4444' },
     { name: 'Physical-Enable', color: '#f97316' },
     { name: 'Bulker', color: '#22c55e' },
+    { name: 'Debuff-Burn', color: '#dc2626' },
+    { name: 'Debuff-Poison', color: '#a855f7' },
+    { name: 'Debuff-Bad-Poison', color: '#7e22ce' },
+    { name: 'Debuff-Paralysis', color: '#ca8a04' },
+    { name: 'Debuff-Sleep', color: '#64748b' },
+    { name: 'Debuff-Freeze', color: '#0891b2' },
   ];
+  // Trạng thái bất thường gây cho đối thủ (catalog "ab") -> tag tự gắn
+  const DEBUFF_TAGS = {
+    burn: 'Debuff-Burn', poison: 'Debuff-Poison', bad_poison: 'Debuff-Bad-Poison',
+    paralysis: 'Debuff-Paralysis', sleep: 'Debuff-Sleep', freeze: 'Debuff-Freeze',
+  };
   const BLOCK_DEFS = [
     { id: 'cheer-physical', title: 'Cheer Physical', category: 'PHYSICAL' },
     { id: 'carry-physical', title: 'Carry Physical', category: 'PHYSICAL' },
@@ -321,8 +332,24 @@
     }
   }
 
+  /** Tag tự gắn cho một pair: DPS theo role (trừ role gốc Support) + Debuff-* theo trạng thái gây cho đối thủ. */
+  function autoTagsFor(e, withRole = true) {
+    const add = (e.ab || []).map((k) => DEBUFF_TAGS[k]).filter(Boolean);
+    if (withRole && e.role !== 2) {
+      if (e.role === 0 || e.xr === 0) add.push('Physical-DPS');
+      if (e.role === 1 || e.xr === 1) add.push('Special-DPS');
+    }
+    return add;
+  }
+
+  function addTags(st, id, add) {
+    if (!add.length) return;
+    const have = st.pairTags[id] || [];
+    st.pairTags[id] = PAIR_TAGS.map((t) => t.name).filter((n) => have.includes(n) || add.includes(n));
+  }
+
   /**
-   * Role / EX role Strike Physical (0) -> Physical-DPS, Strike Special (1) -> Special-DPS.
+   * Role / EX role Strike Physical (0) -> Physical-DPS, Strike Special (1) -> Special-DPS; Debuff-* theo "ab".
    * Mỗi pair chỉ tự gắn một lần (ghi vào autoTagged) để tag người dùng đã bỏ không bị gắn lại.
    * Trả về true nếu có thay đổi.
    */
@@ -340,24 +367,24 @@
       st.autoTagVer = 2;
       changed = true;
     }
+    // v3: thêm tag Debuff-* cho các pair đã tự gắn trước đó
+    if (st.autoTagVer < 3) {
+      for (const e of CATALOG) if (done.has(e.id)) addTags(st, e.id, autoTagsFor(e, false));
+      st.autoTagVer = 3;
+      changed = true;
+    }
     for (const e of CATALOG) {
       if (done.has(e.id)) continue;
       done.add(e.id);
       changed = true;
-      if (e.role === 2) continue;
-      const add = [];
-      if (e.role === 0 || e.xr === 0) add.push('Physical-DPS');
-      if (e.role === 1 || e.xr === 1) add.push('Special-DPS');
-      if (!add.length) continue;
-      const have = st.pairTags[e.id] || [];
-      st.pairTags[e.id] = PAIR_TAGS.map((t) => t.name).filter((n) => have.includes(n) || add.includes(n));
+      addTags(st, e.id, autoTagsFor(e));
     }
     st.autoTagged = [...done];
     return changed;
   }
 
   function emptyState() {
-    return { app: 'gvg-team-planner', version: 1, updated: '', members: [], groups: [], pairTags: {}, autoTagged: [], autoTagVer: 2, bosses: [], offTeams: [] };
+    return { app: 'gvg-team-planner', version: 1, updated: '', members: [], groups: [], pairTags: {}, autoTagged: [], autoTagVer: 3, bosses: [], offTeams: [] };
   }
 
   function seedState() {
@@ -962,10 +989,22 @@
     return (m.variationTypes || []).some((v) => (typeof v === 'number' ? v : v && v.variationType) === 7);
   }
 
+  /** Trạng thái pair gây cho đối thủ (giống tools/fetch_pair_icons.py:inflicts). */
+  function inflicts(m) {
+    const out = new Set();
+    for (const k of m.capabilityKeys || []) {
+      const p = k.split('.');
+      if (p.length === 5 && p[0] === 'status' && p[1] === 'abnormal' && p[2] === 'apply'
+        && (p[4] === 'single_enemy' || p[4] === 'all_enemies')) out.add(p[3]);
+    }
+    return [...out].sort();
+  }
+
   /** One pair of sync_meta_list.json -> catalog entry (same as tools/fetch_pair_icons.py:catalog_entry). */
   function catalogEntry(key, m, names) {
     const tr = names['trainer_name_' + m.trainerName];
     const pk = names['pokemon_name_' + m.pokemonName];
+    const ab = inflicts(m);
     if (!tr || !pk || !m.actorId || !m.pokemonActorId) return null;
     return {
       id: String(m.id || key), tr, pk,
@@ -973,6 +1012,7 @@
       ex: m.exclusivity, type: m.type, wk: m.weakness, rar: m.rarity, hx: m.hasEX ? 1 : 0, tera: isTera(m) ? 1 : 0,
       d: m._startDate || 0, dg: m._gridDate || 0, dx: m._exStartDate || 0, dxr: m._exRoleDate || 0,
       ta: m.actorId, pa: m.pokemonActorId,
+      ...(ab.length ? { ab } : {}),
     };
   }
 
