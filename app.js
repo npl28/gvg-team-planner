@@ -459,6 +459,7 @@
         status.textContent = 'Không lưu được vào trình duyệt – hãy Export JSON';
       }
       updateOffShared();
+      queueCloudPush();
     }, 250);
   }
 
@@ -4247,6 +4248,219 @@
   window.addEventListener('scroll', queueNavSync, { passive: true });
   window.addEventListener('resize', () => { queueNavSync(); fitRosterGrid(); });
 
+  // ---------------------------------------------------------------- lưu chung Rosters (GitHub)
+
+  /*
+   * Rosters (members, groups, tag pair) lưu chung ở một file JSON trên GitHub. Ai có token chung (nhập một lần,
+   * hoặc mở link mời #token=…) thì thay đổi được đẩy lên; không có token thì chỉ xem bản chung.
+   * Hai người sửa cùng lúc: gộp 3 chiều theo từng member / group / pair / tag, chỉ đè khi cùng sửa một mục.
+   */
+  const CLOUD = { repo: 'npl28/gvg-data', path: 'rosters.json', branch: 'main' };
+  const TOKEN_KEY = 'gvg-team-planner/gh-token';
+  const ROSTER_KEYS = ['members', 'groups', 'pairTags', 'autoTagged', 'autoTagVer'];
+  const cloud = { sha: '', base: null, busy: false, again: false, ok: false };
+  let ghToken = '';
+  try { ghToken = localStorage.getItem(TOKEN_KEY) || ''; } catch (_) { /* không có */ }
+
+  const rosterOf = (s) => clone(Object.fromEntries(ROSTER_KEYS.map((k) => [k, s[k]])));
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+  function setCloudStatus(text) {
+    const n = $('#cloudStatus');
+    if (n) n.textContent = text;
+  }
+
+  const b64encode = (text) => {
+    const bytes = new TextEncoder().encode(text);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  };
+  const b64decode = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, '')), (c) => c.charCodeAt(0)));
+
+  async function gh(method, body) {
+    const url = `https://api.github.com/repos/${CLOUD.repo}/contents/${CLOUD.path}`
+      + (method === 'GET' ? `?ref=${CLOUD.branch}&t=${Date.now()}` : '');
+    const headers = { Accept: 'application/vnd.github+json' };
+    if (ghToken) headers.Authorization = 'Bearer ' + ghToken;
+    if (body) headers['Content-Type'] = 'application/json';
+    const r = await fetch(url, { method, headers, cache: 'no-store', body: body && JSON.stringify(body) });
+    if (r.status === 404 && method === 'GET') return null;
+    if (!r.ok) {
+      const err = new Error(r.status === 401 ? 'token sai hoặc hết hạn' : r.status === 403 ? 'token không có quyền ghi / vượt giới hạn' : 'HTTP ' + r.status);
+      err.status = r.status;
+      throw err;
+    }
+    return r.json();
+  }
+
+  /** { roster, sha } của bản chung; null khi file chưa có. */
+  async function cloudFetch() {
+    const f = await gh('GET');
+    if (!f) return null;
+    const d = JSON.parse(b64decode(f.content));
+    return { roster: rosterOf(normalize({ ...d, members: d.members || [], groups: d.groups || [] })), sha: f.sha };
+  }
+
+  /** Gộp 3 chiều danh sách có id: mục local đổi so với base thì lấy local, không thì lấy remote (kể cả xoá). */
+  function mergeList(base, local, remote, inner) {
+    const map = (a) => new Map((a || []).map((x) => [x.id, x]));
+    const b = map(base), l = map(local), r = map(remote);
+    const out = [];
+    const ids = [...r.keys(), ...[...l.keys()].filter((id) => !r.has(id))];
+    for (const id of ids) {
+      const v = mergeItem(b.get(id), l.get(id), r.get(id), inner);
+      if (v !== undefined) out.push(v);
+    }
+    return out;
+  }
+
+  function mergeItem(bv, lv, rv, inner) {
+    if (same(lv, bv)) return rv;
+    if (same(rv, bv) || lv === undefined || rv === undefined) return lv;
+    return inner ? inner(bv, lv, rv) : lv;
+  }
+
+  function mergeObj(base, local, remote) {
+    const out = {};
+    for (const k of new Set([...Object.keys(remote || {}), ...Object.keys(local || {})])) {
+      const v = mergeItem((base || {})[k], (local || {})[k], (remote || {})[k]);
+      if (v !== undefined) out[k] = v;
+    }
+    return out;
+  }
+
+  function mergeRoster(base, local, remote) {
+    const pair = (b, l, r) => ({ ...r, ...l, levels: mergeObj(b && b.levels, l.levels, r.levels) });
+    const group = (b, l, r) => ({ ...r, ...l, pairs: mergeList(b && b.pairs, l.pairs, r.pairs, pair) });
+    return {
+      members: mergeList(base.members, local.members, remote.members),
+      groups: mergeList(base.groups, local.groups, remote.groups, group),
+      pairTags: mergeObj(base.pairTags, local.pairTags, remote.pairTags),
+      autoTagged: [...new Set([...remote.autoTagged, ...local.autoTagged])],
+      autoTagVer: Math.max(remote.autoTagVer, local.autoTagVer),
+    };
+  }
+
+  function applyRoster(roster) {
+    Object.assign(state, clone(roster));
+    reindex();
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (_) { /* bỏ qua */ }
+  }
+
+  /** Nạp bản chung (gộp với thay đổi chưa đẩy) và vẽ lại. */
+  async function cloudPull(quiet) {
+    try {
+      const got = await cloudFetch();
+      if (!got) {
+        cloud.ok = true;
+        cloud.base = cloud.base || rosterOf(state);
+        setCloudStatus(ghToken ? 'Bản chung chưa có – sửa gì đó để tạo' : 'Chưa có bản chung');
+        if (ghToken) cloudPush();
+        return;
+      }
+      const local = rosterOf(state);
+      const pending = cloud.base && !same(local, cloud.base);
+      const merged = pending ? mergeRoster(cloud.base, local, got.roster) : got.roster;
+      cloud.sha = got.sha;
+      cloud.base = got.roster;
+      cloud.ok = true;
+      if (!same(merged, local)) {
+        applyRoster(merged);
+        writeSeedInfo(true);
+        const n = $('#seedNotice');
+        if (n) n.remove();
+        render();
+      }
+      setCloudStatus(ghToken ? 'Đã đồng bộ bản chung ' + new Date().toLocaleTimeString('vi-VN') : 'Đang xem bản chung (chỉ xem – chưa có token)');
+      if (pending && ghToken) cloudPush();
+    } catch (err) {
+      setCloudStatus('Không tải được bản chung: ' + err.message);
+      if (!quiet) toast('Không tải được bản chung: ' + err.message, 'error');
+    }
+  }
+
+  /** Đẩy Rosters lên; sha cũ (người khác vừa lưu) thì tải bản mới, gộp rồi đẩy lại. */
+  async function cloudPush() {
+    if (!ghToken || !cloud.ok) return;
+    if (cloud.busy) { cloud.again = true; return; }
+    const local = rosterOf(state);
+    if (cloud.base && cloud.sha && same(local, cloud.base)) return;
+    cloud.busy = true;
+    setCloudStatus('Đang lưu lên bản chung…');
+    try {
+      for (let tries = 0; ; tries++) {
+        const roster = rosterOf(state);
+        const body = { app: 'gvg-team-planner', version: 1, updated: new Date().toISOString().slice(0, 10), ...roster };
+        try {
+          const res = await gh('PUT', {
+            message: 'Cập nhật Rosters', branch: CLOUD.branch, content: b64encode(JSON.stringify(body, null, 1)),
+            ...(cloud.sha ? { sha: cloud.sha } : {}),
+          });
+          cloud.sha = res.content.sha;
+          cloud.base = roster;
+          setCloudStatus('Đã lưu lên bản chung ' + new Date().toLocaleTimeString('vi-VN'));
+          break;
+        } catch (err) {
+          if ((err.status !== 409 && err.status !== 422) || tries >= 3) throw err;
+          const got = await cloudFetch();
+          const merged = got ? mergeRoster(cloud.base || got.roster, rosterOf(state), got.roster) : rosterOf(state);
+          cloud.sha = got ? got.sha : '';
+          cloud.base = got ? got.roster : null;
+          applyRoster(merged);
+          render();
+        }
+      }
+    } catch (err) {
+      setCloudStatus('Chưa lưu được lên bản chung: ' + err.message);
+      toast('Chưa lưu được lên bản chung: ' + err.message, 'error');
+    } finally {
+      cloud.busy = false;
+      if (cloud.again) { cloud.again = false; cloudPush(); }
+    }
+  }
+
+  const queueCloudPush = () => {
+    clearTimeout(queueCloudPush.timer);
+    queueCloudPush.timer = setTimeout(cloudPush, 1500);
+  };
+
+  function setToken(t) {
+    ghToken = str(t).trim();
+    try {
+      if (ghToken) localStorage.setItem(TOKEN_KEY, ghToken);
+      else localStorage.removeItem(TOKEN_KEY);
+    } catch (_) { /* chỉ dùng trong phiên này */ }
+    updateTokenButton();
+  }
+
+  function updateTokenButton() {
+    const btn = $('#btnToken');
+    if (btn) btn.lastChild.textContent = ghToken ? 'Đổi / bỏ token' : 'Nhập token để sửa chung';
+  }
+
+  const tokenBtn = $('#btnToken');
+  if (tokenBtn) {
+    tokenBtn.addEventListener('click', () => {
+      const t = prompt('Token chung để sửa Rosters (để trống = bỏ token, chỉ xem):', ghToken);
+      if (t === null) return;
+      setToken(t);
+      toast(ghToken ? 'Đã lưu token – thay đổi Rosters sẽ được lưu chung' : 'Đã bỏ token – chỉ xem bản chung', 'ok');
+      cloudPull();
+    });
+  }
+  // Link mời: …/#token=xxx – lưu token rồi xoá khỏi địa chỉ
+  const tokenHash = location.hash.match(/^#token=([^&]+)/);
+  if (tokenHash) {
+    setToken(decodeURIComponent(tokenHash[1]));
+    history.replaceState(null, '', location.pathname + location.search + '#rosters');
+    toast('Đã lưu token – thay đổi Rosters sẽ được lưu chung', 'ok');
+  }
+  updateTokenButton();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !cloud.busy) cloudPull(true);
+  });
+
   window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
   $('#saveStatus').textContent = 'Tự lưu trên trình duyệt này';
   const offStatus = syncSharedOff();
@@ -4255,4 +4469,5 @@
   if (offStatus === 'notice') showOffNotice();
   if (seedStatus === 'auto') toast('Đã nạp dữ liệu chuẩn mới' + (state.updated ? ` (cập nhật ${state.updated})` : ''), 'ok');
   if (seedStatus === 'notice') showSeedNotice();
+  cloudPull(true);
 })();
