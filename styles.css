@@ -1059,3 +1059,15 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-sel
   .off-toggle, .seg-btn, .off-link, button.off-mini, .off-chip { min-height: 32px; }
   .col-grip { width: 16px; right: -4px; }
 }
+
+/* Lưu chung: đăng nhập / admin / quyền sửa */
+.cloud-banner { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 8px 12px; font-size: 13px; margin: 0 0 12px; }
+.login-card { max-width: 420px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: var(--shadow-sm); }
+.login-form { display: grid; gap: 10px; }
+.login-row { display: grid; gap: 4px; font-size: 13px; color: var(--text-2); }
+.login-row[hidden] { display: none; }
+.admin-users { border-collapse: collapse; margin: 0 0 12px; min-width: 320px; }
+.admin-users th, .admin-users td { border-bottom: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.member-head.mine { box-shadow: inset 0 -3px 0 var(--accent); }
+input.lv[readonly] { cursor: default; }
+input.lv[readonly]:focus { outline-color: var(--border-strong); }

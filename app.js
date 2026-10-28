@@ -838,6 +838,10 @@
       box.append(el('span', { class: 'muted', title: 'Pair chưa có icon – bấm icon của pair để chọn trước khi gắn tag' }, '–'));
       return box;
     }
+    if (!canEditRoster()) {
+      box.append(...getTags(e.id).map(tagChip));
+      return box;
+    }
     const btn = el('button', { type: 'button', class: 'tag-edit', title: 'Thêm / bỏ tag', 'aria-haspopup': 'true', 'aria-expanded': 'false' });
     const menu = el('div', { class: 'combo-pop tag-pop', role: 'menu', 'aria-label': 'Tag của ' + catalogLabel(e) });
     const float = floatPanel(btn, menu);
@@ -1096,6 +1100,8 @@
     if (h === 'summary') return { view: 'summary' };
     if (h === 'offtype') return { view: 'offtype' };
     if (h === 'icons') return { view: 'icons' };
+    if (h === 'login') return { view: 'login' };
+    if (h === 'admin') return { view: 'admin' };
     return { view: 'rosters' };
   }
 
@@ -1112,6 +1118,8 @@
     else if (r.view === 'summary') view.replaceChildren(renderSummary());
     else if (r.view === 'offtype') view.replaceChildren(renderOffType());
     else if (r.view === 'icons') view.replaceChildren(renderIconLibrary());
+    else if (r.view === 'login') view.replaceChildren(renderLogin());
+    else if (r.view === 'admin') view.replaceChildren(renderAdmin());
     else {
       view.replaceChildren(renderRosters());
       fixStickyHeader();
@@ -1164,6 +1172,8 @@
         zero ? el('span', { class: 'nav-alert', title: `${zero} team chưa có member đạt chuẩn` }, zero) : null);
     });
     $('#tabs').replaceChildren(
+      ...(cloudOn() ? [item('#login', ic('grid'), session ? 'Tài khoản: ' + (session.admin ? 'admin' : session.name) : 'Đăng nhập', r.view === 'login'),
+        ...(isAdminSession() ? [item('#admin', ic('layers'), 'Quản lý người dùng', r.view === 'admin')] : [])] : []),
       item('#rosters', ic('grid'), 'Rosters', r.view === 'rosters', el('span', { class: 'nav-count' }, nPairs)),
       item('#summary', ic('chart'), 'Tổng quan', r.view === 'summary'),
       item('#offtype', ic('layers'), 'OFF-TYPE builder', r.view === 'offtype',
@@ -1236,13 +1246,13 @@
     const head = el('div', { class: 'page-head' },
       el('h1', null, 'Rosters'),
       el('span', { class: 'page-sub' }, `${state.members.length} member · ${nPairs} pair · cập nhật `,
-        bound(state, 'updated', { class: 'edit', style: 'width:64px;display:inline-block', placeholder: 'dd/mm', title: 'Ngày cập nhật' })),
+        bound(state, 'updated', { class: 'edit', style: 'width:64px;display:inline-block', placeholder: 'dd/mm', title: 'Ngày cập nhật', readonly: !canEditRoster() })),
       el('span', { class: 'spacer' }),
-      el('button', { class: 'btn', title: 'Nạp file roster của từng member (chọn được nhiều file)', onclick: () => $('#fileInput').click() }, ic('upload'), 'Import member'),
+      canEditRoster() ? el('button', { class: 'btn', title: 'Nạp file roster của từng member (chọn được nhiều file)', onclick: () => $('#fileInput').click() }, ic('upload'), 'Import member') : null,
       el('button', { class: 'btn', title: 'Tải roster của từng member ra file riêng', onclick: openMemberExport }, ic('download'), 'Export member'),
-      el('button', { class: 'btn', onclick: addMember }, ic('plus'), 'Member'),
-      el('button', { class: 'btn', onclick: addGroup }, ic('plus'), 'Type'),
-      el('button', {
+      canEditRoster() ? el('button', { class: 'btn', onclick: addMember }, ic('plus'), 'Member') : null,
+      canEditRoster() ? el('button', { class: 'btn', onclick: addGroup }, ic('plus'), 'Type') : null,
+      !canEditRoster() ? null : el('button', {
         class: 'btn btn-ghost btn-danger', title: 'Bỏ mọi thay đổi, nạp lại dữ liệu chuẩn',
         onclick: () => {
           if (!confirm('Khôi phục dữ liệu chuẩn? Mọi thay đổi chưa Export sẽ mất.')) return;
@@ -1283,6 +1293,7 @@
     const wrap = el('div', { class: 'grid-wrap', id: 'rosterWrap', onscroll: queueTypeNavSync }, buildRosterTable());
     setTimeout(applyRosterFilter);
     return el('div', null, head, toolbar,
+      cloudOn() && !session ? el('p', { class: 'cloud-banner' }, 'Đang xem bản chung. ', el('a', { href: '#login' }, 'Đăng nhập'), ' bằng tên của bạn để sửa cột của mình.') : null,
       el('p', { class: 'hint' }, 'Gõ move level 1–10 (để trống, 0, - hoặc k = "Không có"). Dùng phím mũi tên / Enter để đi giữa các ô; bấm icon để đổi ảnh pair. "+ Pair" mở danh sách pair cùng hệ để chọn (gõ để tìm).'),
       renderTypeNav(), wrap);
   }
@@ -1372,12 +1383,12 @@
       el('th', { class: 'tag-col', title: 'Tag của sync pair – bấm vào ô để thêm / bỏ (dùng chung với Kho icon)' },
         el('span', { class: 'th-label' }, 'Tags')),
       el('th', { class: 'num-col', title: 'Số member sở hữu pair' }, el('span', { class: 'th-label', style: 'text-align:center;padding:8px 2px' }, 'Sở hữu')),
-      members.map((m) => el('th', { class: 'member-head' },
-        bound(m, 'name', { title: m.name, placeholder: 'Tên' }),
-        bound(m, 'tag', { class: 'edit tag', placeholder: 'tag', title: 'Tag (vd: OFF-TYPE, STALL…)' }),
+      members.map((m) => el('th', { class: 'member-head' + (session && session.memberId === m.id ? ' mine' : '') },
+        bound(m, 'name', { title: m.name, placeholder: 'Tên', readonly: !canEditRoster() }),
+        bound(m, 'tag', { class: 'edit tag', placeholder: 'tag', title: 'Tag (vd: OFF-TYPE, STALL…)', readonly: !canEditRoster() }),
         el('div', { class: 'member-actions' },
           el('button', { class: 'icon-btn plain', title: `Export roster của ${m.name}`, 'aria-label': `Export roster của ${m.name}`, onclick: () => exportMember(m) }, ic('download')),
-          el('button', { class: 'icon-btn', title: `Xóa member ${m.name}`, 'aria-label': `Xóa member ${m.name}`, onclick: () => deleteMember(m) }, ic('x'))),
+          canEditRoster() ? el('button', { class: 'icon-btn', title: `Xóa member ${m.name}`, 'aria-label': `Xóa member ${m.name}`, onclick: () => deleteMember(m) }, ic('x')) : null),
       )),
     );
     const head2 = el('tr', { class: 'count-row' },
@@ -1398,10 +1409,10 @@
               onclick: () => toggleGroup(g),
             }, ic('chevron')),
             typeDot(fold(g.type).split(' ')[0]),
-            bound(g, 'type', { placeholder: 'Tên type' }, refreshTypeNav),
+            bound(g, 'type', { placeholder: 'Tên type', readonly: !canEditRoster() }, refreshTypeNav),
             el('span', { class: 'group-count' }, `${g.pairs.length} pair`),
-            el('button', { class: 'btn btn-sm', onclick: () => addPair(g) }, ic('plus'), 'Pair'),
-            el('button', { class: 'icon-btn', title: `Xóa type ${g.type} và toàn bộ pair`, 'aria-label': `Xóa type ${g.type}`, onclick: () => deleteGroup(g) }, ic('x')),
+            canEditRoster() ? el('button', { class: 'btn btn-sm', onclick: () => addPair(g) }, ic('plus'), 'Pair') : null,
+            canEditRoster() ? el('button', { class: 'icon-btn', title: `Xóa type ${g.type} và toàn bộ pair`, 'aria-label': `Xóa type ${g.type}`, onclick: () => deleteGroup(g) }, ic('x')) : null,
           ),
         ),
       ));
@@ -1448,7 +1459,7 @@
   function pairIconButton(p, size, onChange) {
     if (!CATALOG.length) return null;
     const btn = el('button', {
-      class: 'avatar-btn', title: 'Đổi icon',
+      class: 'avatar-btn', title: 'Đổi icon', disabled: !canEditRoster(),
       onclick: () => openIconPicker(p, () => { refresh(); onChange && onChange(); }),
     });
     const refresh = () => {
@@ -1456,7 +1467,7 @@
       const a = avatar(e, size);
       if (p.icon) a.classList.add('manual');
       btn.replaceChildren(a);
-      btn.title = (e ? Match.displayName(e) : 'Chưa có icon') + ' – bấm để đổi';
+      btn.title = (e ? Match.displayName(e) : 'Chưa có icon') + (canEditRoster() ? ' – bấm để đổi' : '');
     };
     refresh();
     btn.refresh = refresh;
@@ -1615,7 +1626,7 @@
       name.title = pairLabel(p);
     });
     // Tên pair không sửa tay: chỉ chọn từ danh sách theo hệ (dòng cũ chưa có tên thì hiện ô chọn)
-    const name = p.name
+    const name = p.name || !canEditRoster()
       ? el('span', { class: 'pair-name', title: pairLabel(p) }, pairNameNodes(p))
       : pairCombo(g, (e) => {
         p.name = Match.displayName(e);
@@ -1626,7 +1637,7 @@
     return el('tr', { dataset: { group: g.id, pair: p.id } },
       el('td', { class: 'sticky-col pair-col' },
         el('div', { class: 'pair-cell' },
-          el('button', { class: 'icon-btn row-del', title: 'Xóa dòng', 'aria-label': 'Xóa dòng', onclick: () => deletePair(g, p) }, ic('x')),
+          canEditRoster() ? el('button', { class: 'icon-btn row-del', title: 'Xóa dòng', 'aria-label': 'Xóa dòng', onclick: () => deletePair(g, p) }, ic('x')) : null,
           icon,
           name,
         ),
@@ -1637,7 +1648,7 @@
         const v = p.levels[m.id];
         const td = el('td', { class: v ? 'l' + v : '' });
         td.append(el('input', {
-          class: 'lv', value: v ?? '', placeholder: '·', inputmode: 'numeric', maxlength: 2,
+          class: 'lv', value: v ?? '', placeholder: '·', inputmode: 'numeric', maxlength: 2, readonly: !canEditCell(m.id),
           title: `${m.name} – ${pairLabel(p)}`,
           'aria-label': `${m.name} – ${pairLabel(p)}`,
           dataset: { pair: p.id, member: m.id },
@@ -1650,6 +1661,8 @@
   }
 
   function commitLevel(input, p, m) {
+    if (!canEditCell(m.id)) return;
+    const old = p.levels[m.id] ?? null;
     const r = parseLevel(input.value);
     if (!r.ok) {
       input.classList.add('invalid');
@@ -1663,6 +1676,7 @@
     input.parentElement.className = r.v ? 'l' + r.v : '';
     save();
     updateRosterCounts();
+    if (cloudOn() && !isAdminSession() && r.v !== old) cloudSetLevel(p, m, r.v, old, input);
   }
 
   function updateRosterCounts() {
@@ -4248,19 +4262,36 @@
   window.addEventListener('scroll', queueNavSync, { passive: true });
   window.addEventListener('resize', () => { queueNavSync(); fitRosterGrid(); });
 
-  // ---------------------------------------------------------------- lưu chung Rosters (GitHub)
+  // ---------------------------------------------------------------- lưu chung Rosters (Google Sheet)
 
   /*
-   * Rosters (members, groups, tag pair) lưu chung ở một file JSON trên GitHub. Ai có token chung (nhập một lần,
-   * hoặc mở link mời #token=…) thì thay đổi được đẩy lên; không có token thì chỉ xem bản chung.
-   * Hai người sửa cùng lúc: gộp 3 chiều theo từng member / group / pair / tag, chỉ đè khi cùng sửa một mục.
+   * Rosters (members, groups, tag pair) lưu chung trên Google Sheet qua Apps Script (tools/apps-script/Code.gs).
+   * Đăng nhập bằng tên member: chỉ sửa được ô level trong cột của mình (nếu admin cho phép).
+   * Admin (tên "admin" + password) sửa mọi thứ; lưu cả bảng, ai vừa sửa trước thì gộp 3 chiều rồi gửi lại.
+   * API_URL trống = không dùng bản chung, app chỉ lưu trên trình duyệt như cũ.
    */
-  const CLOUD = { repo: 'npl28/gvg-data', path: 'rosters.json', branch: 'main' };
-  const TOKEN_KEY = 'gvg-team-planner/gh-token';
+  const API_URL = '';
+  const SESSION_KEY = 'gvg-team-planner/session';
   const ROSTER_KEYS = ['members', 'groups', 'pairTags', 'autoTagged', 'autoTagVer'];
-  const cloud = { sha: '', base: null, busy: false, again: false, ok: false };
-  let ghToken = '';
-  try { ghToken = localStorage.getItem(TOKEN_KEY) || ''; } catch (_) { /* không có */ }
+  const cloud = { rev: -1, base: null, busy: false, again: false, ok: false, users: [] };
+  let session = null; // { name, memberId, canEdit } hoặc { admin: true, token }
+  try { session = JSON.parse(localStorage.getItem(SESSION_KEY)); } catch (_) { /* chưa đăng nhập */ }
+
+  function cloudOn() { return !!API_URL; }
+  function isAdminSession() { return !!(session && session.admin); }
+  /** Sửa được cấu trúc Rosters (member, type, pair, icon, tag): admin, hoặc khi không dùng bản chung. */
+  function canEditRoster() { return !cloudOn() || isAdminSession(); }
+  function canEditCell(memberId) {
+    return canEditRoster() || !!(session && session.memberId === memberId && session.canEdit);
+  }
+
+  function setSession(s) {
+    session = s;
+    try {
+      if (s) localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+      else localStorage.removeItem(SESSION_KEY);
+    } catch (_) { /* chỉ dùng trong phiên này */ }
+  }
 
   const rosterOf = (s) => clone(Object.fromEntries(ROSTER_KEYS.map((k) => [k, s[k]])));
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -4270,37 +4301,21 @@
     if (n) n.textContent = text;
   }
 
-  const b64encode = (text) => {
-    const bytes = new TextEncoder().encode(text);
-    let bin = '';
-    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-    return btoa(bin);
-  };
-  const b64decode = (b64) => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, '')), (c) => c.charCodeAt(0)));
-
-  async function gh(method, body) {
-    const url = `https://api.github.com/repos/${CLOUD.repo}/contents/${CLOUD.path}`
-      + (method === 'GET' ? `?ref=${CLOUD.branch}&t=${Date.now()}` : '');
-    const headers = { Accept: 'application/vnd.github+json' };
-    if (ghToken) headers.Authorization = 'Bearer ' + ghToken;
-    if (body) headers['Content-Type'] = 'application/json';
-    const r = await fetch(url, { method, headers, cache: 'no-store', body: body && JSON.stringify(body) });
-    if (r.status === 404 && method === 'GET') return null;
-    if (!r.ok) {
-      const err = new Error(r.status === 401 ? 'token sai hoặc hết hạn' : r.status === 403 ? 'token không có quyền ghi / vượt giới hạn' : 'HTTP ' + r.status);
-      err.status = r.status;
+  /** Gọi Apps Script; lỗi server -> Error có .data là phản hồi đầy đủ. */
+  async function api(action, body = {}) {
+    // text/plain để không bị preflight CORS (Apps Script không trả lời OPTIONS)
+    const r = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ action, ...body }) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    if (!d.ok) {
+      const err = new Error(d.error || 'lỗi server');
+      err.data = d;
       throw err;
     }
-    return r.json();
+    return d;
   }
 
-  /** { roster, sha } của bản chung; null khi file chưa có. */
-  async function cloudFetch() {
-    const f = await gh('GET');
-    if (!f) return null;
-    const d = JSON.parse(b64decode(f.content));
-    return { roster: rosterOf(normalize({ ...d, members: d.members || [], groups: d.groups || [] })), sha: f.sha };
-  }
+  const remoteRoster = (d) => rosterOf(normalize(d.roster));
 
   /** Gộp 3 chiều danh sách có id: mục local đổi so với base thì lấy local, không thì lấy remote (kể cả xoá). */
   function mergeList(base, local, remote, inner) {
@@ -4348,70 +4363,97 @@
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (_) { /* bỏ qua */ }
   }
 
-  /** Nạp bản chung (gộp với thay đổi chưa đẩy) và vẽ lại. */
+  /** Quyền của người đang đăng nhập theo danh sách user mới nhất (admin có thể vừa khoá / đổi tên). */
+  function refreshSession() {
+    if (!session || session.admin) return;
+    const u = cloud.users.find((x) => x.id === session.memberId);
+    if (!u) setSession(null);
+    else if (u.canEdit !== session.canEdit || u.name !== session.name) setSession({ ...session, name: u.name, canEdit: u.canEdit });
+  }
+
+  function cloudStatusText() {
+    const who = !session ? 'chưa đăng nhập – chỉ xem'
+      : session.admin ? 'admin' : session.name + (session.canEdit ? '' : ' (bị khoá sửa)');
+    return `Bản chung · ${who}`;
+  }
+
+  /** Nhận bản chung từ server (gộp với thay đổi admin chưa gửi). Trả về true nếu admin còn thay đổi cần gửi. */
+  function takeRemote(d) {
+    const remote = remoteRoster(d);
+    const local = rosterOf(state);
+    const pending = isAdminSession() && cloud.base && !same(local, cloud.base);
+    const merged = pending ? mergeRoster(cloud.base, local, remote) : remote;
+    cloud.rev = d.rev;
+    cloud.base = remote;
+    cloud.users = d.users || [];
+    cloud.ok = true;
+    refreshSession();
+    if (!same(merged, local)) {
+      applyRoster(merged);
+      writeSeedInfo(true);
+      const n = $('#seedNotice');
+      if (n) n.remove();
+    }
+    return !!pending;
+  }
+
   async function cloudPull(quiet) {
+    if (!cloudOn()) return;
     try {
-      const got = await cloudFetch();
-      if (!got) {
+      const d = await api('get');
+      const before = JSON.stringify(rosterOf(state));
+      let pending;
+      if (!d.roster.members.length && !d.roster.groups.length) {
+        // Sheet còn trống: giữ dữ liệu đang có; admin đẩy nó lên làm bản đầu tiên
+        cloud.rev = d.rev;
+        cloud.base = remoteRoster(d);
+        cloud.users = d.users || [];
         cloud.ok = true;
-        cloud.base = cloud.base || rosterOf(state);
-        setCloudStatus(ghToken ? 'Bản chung chưa có – sửa gì đó để tạo' : 'Chưa có bản chung');
-        if (ghToken) cloudPush();
-        return;
+        refreshSession();
+        pending = isAdminSession() && state.members.length > 0;
+      } else {
+        pending = takeRemote(d);
       }
-      const local = rosterOf(state);
-      const pending = cloud.base && !same(local, cloud.base);
-      const merged = pending ? mergeRoster(cloud.base, local, got.roster) : got.roster;
-      cloud.sha = got.sha;
-      cloud.base = got.roster;
-      cloud.ok = true;
-      if (!same(merged, local)) {
-        applyRoster(merged);
-        writeSeedInfo(true);
-        const n = $('#seedNotice');
-        if (n) n.remove();
-        render();
-      }
-      setCloudStatus(ghToken ? 'Đã đồng bộ bản chung ' + new Date().toLocaleTimeString('vi-VN') : 'Đang xem bản chung (chỉ xem – chưa có token)');
-      if (pending && ghToken) cloudPush();
+      setCloudStatus(cloudStatusText());
+      if (JSON.stringify(rosterOf(state)) !== before || !quiet) render();
+      if (pending) cloudPush();
     } catch (err) {
       setCloudStatus('Không tải được bản chung: ' + err.message);
       if (!quiet) toast('Không tải được bản chung: ' + err.message, 'error');
     }
   }
 
-  /** Đẩy Rosters lên; sha cũ (người khác vừa lưu) thì tải bản mới, gộp rồi đẩy lại. */
+  /** Admin gửi cả bảng; server báo có người vừa sửa (conflict) thì gộp với bản mới rồi gửi lại. */
   async function cloudPush() {
-    if (!ghToken || !cloud.ok) return;
+    if (!cloudOn() || !isAdminSession() || !cloud.ok) return;
     if (cloud.busy) { cloud.again = true; return; }
-    const local = rosterOf(state);
-    if (cloud.base && cloud.sha && same(local, cloud.base)) return;
+    if (same(rosterOf(state), cloud.base)) return;
     cloud.busy = true;
     setCloudStatus('Đang lưu lên bản chung…');
     try {
       for (let tries = 0; ; tries++) {
         const roster = rosterOf(state);
-        const body = { app: 'gvg-team-planner', version: 1, updated: new Date().toISOString().slice(0, 10), ...roster };
         try {
-          const res = await gh('PUT', {
-            message: 'Cập nhật Rosters', branch: CLOUD.branch, content: b64encode(JSON.stringify(body, null, 1)),
-            ...(cloud.sha ? { sha: cloud.sha } : {}),
-          });
-          cloud.sha = res.content.sha;
+          const d = await api('saveRoster', { token: session.token, baseRev: cloud.rev, roster: { ...roster, updated: state.updated } });
+          cloud.rev = d.rev;
           cloud.base = roster;
-          setCloudStatus('Đã lưu lên bản chung ' + new Date().toLocaleTimeString('vi-VN'));
+          // Người dùng = member: server giữ quyền cũ theo id, member mới mặc định được sửa
+          const can = new Map(cloud.users.map((u) => [u.id, u.canEdit]));
+          cloud.users = roster.members.map((m) => ({ id: m.id, name: m.name, canEdit: can.get(m.id) ?? true }));
+          if (location.hash === '#admin') render();
+          setCloudStatus(cloudStatusText() + ' · đã lưu ' + new Date().toLocaleTimeString('vi-VN'));
           break;
         } catch (err) {
-          if ((err.status !== 409 && err.status !== 422) || tries >= 3) throw err;
-          const got = await cloudFetch();
-          const merged = got ? mergeRoster(cloud.base || got.roster, rosterOf(state), got.roster) : rosterOf(state);
-          cloud.sha = got ? got.sha : '';
-          cloud.base = got ? got.roster : null;
-          applyRoster(merged);
+          if (!(err.data && err.data.conflict) || tries >= 3) throw err;
+          takeRemote(err.data);
           render();
         }
       }
     } catch (err) {
+      if (/phiên admin/.test(err.message)) {
+        setSession(null);
+        render();
+      }
       setCloudStatus('Chưa lưu được lên bản chung: ' + err.message);
       toast('Chưa lưu được lên bản chung: ' + err.message, 'error');
     } finally {
@@ -4421,48 +4463,140 @@
   }
 
   const queueCloudPush = () => {
+    if (!cloudOn() || !isAdminSession()) return;
     clearTimeout(queueCloudPush.timer);
     queueCloudPush.timer = setTimeout(cloudPush, 1500);
   };
 
-  function setToken(t) {
-    ghToken = str(t).trim();
+  /** Người dùng thường: gửi ngay một ô level; lỗi thì trả ô về giá trị cũ. */
+  async function cloudSetLevel(p, m, level, old, input) {
     try {
-      if (ghToken) localStorage.setItem(TOKEN_KEY, ghToken);
-      else localStorage.removeItem(TOKEN_KEY);
-    } catch (_) { /* chỉ dùng trong phiên này */ }
-    updateTokenButton();
+      const d = await api('setLevel', { name: session.name, memberId: m.id, pairId: p.id, level });
+      cloud.rev = d.rev;
+      setCloudStatus(cloudStatusText() + ' · đã lưu ' + new Date().toLocaleTimeString('vi-VN'));
+    } catch (err) {
+      p.levels[m.id] = old;
+      if (input.isConnected) {
+        input.value = old ?? '';
+        input.parentElement.className = old ? 'l' + old : '';
+        updateRosterCounts();
+      }
+      save(true);
+      toast('Chưa lưu được: ' + err.message, 'error');
+    }
   }
 
-  function updateTokenButton() {
-    const btn = $('#btnToken');
-    if (btn) btn.lastChild.textContent = ghToken ? 'Đổi / bỏ token' : 'Nhập token để sửa chung';
-  }
+  // ---------------------------------------------------------------- Đăng nhập / Admin
 
-  const tokenBtn = $('#btnToken');
-  if (tokenBtn) {
-    tokenBtn.addEventListener('click', () => {
-      const t = prompt('Token chung để sửa Rosters (để trống = bỏ token, chỉ xem):', ghToken);
-      if (t === null) return;
-      setToken(t);
-      toast(ghToken ? 'Đã lưu token – thay đổi Rosters sẽ được lưu chung' : 'Đã bỏ token – chỉ xem bản chung', 'ok');
-      cloudPull();
+  function renderLogin() {
+    const box = el('div', { class: 'login-card' });
+    const head = el('div', { class: 'page-head' }, el('h1', null, 'Đăng nhập'));
+    if (!cloudOn()) {
+      box.append(el('p', null, 'Chưa cấu hình server lưu chung (API_URL trong app.js) – dữ liệu chỉ lưu trên trình duyệt này.'));
+      return el('div', null, head, box);
+    }
+    if (session) {
+      box.append(
+        el('p', null, 'Đang đăng nhập: ', el('strong', null, session.admin ? 'admin' : session.name),
+          session.admin ? ' – sửa được toàn bộ Rosters.'
+            : session.canEdit ? ' – sửa được cột của bạn trong Rosters.' : ' – admin đang khoá quyền sửa của bạn.'),
+        el('div', { class: 'btn-row' },
+          el('a', { class: 'btn btn-primary', href: '#rosters' }, 'Tới Rosters'),
+          session.admin ? el('a', { class: 'btn', href: '#admin' }, 'Quản lý người dùng') : null,
+          el('button', { class: 'btn', onclick: logout }, 'Đăng xuất')));
+      return el('div', null, head, box);
+    }
+    const names = el('datalist', { id: 'loginNames' }, state.members.map((m) => el('option', { value: m.name })));
+    const pw = el('input', { class: 'field', type: 'password', placeholder: 'Password admin', autocomplete: 'current-password' });
+    const pwRow = el('label', { class: 'login-row', hidden: true }, 'Password', pw);
+    const name = el('input', {
+      class: 'field', list: 'loginNames', placeholder: 'Tên của bạn (đúng tên cột trong Rosters)', autocomplete: 'username',
+      oninput: () => { pwRow.hidden = fold(name.value.trim()) !== 'admin'; },
     });
+    const btn = el('button', { class: 'btn btn-primary', type: 'submit' }, 'Đăng nhập');
+    const form = el('form', {
+      class: 'login-form',
+      onsubmit: async (e) => {
+        e.preventDefault();
+        const n = name.value.trim();
+        if (!n) { name.focus(); return; }
+        btn.disabled = true;
+        try {
+          if (fold(n) === 'admin') {
+            const d = await api('adminLogin', { password: pw.value });
+            setSession({ admin: true, token: d.token });
+          } else {
+            const d = await api('login', { name: n });
+            setSession({ name: d.member.name, memberId: d.member.id, canEdit: d.member.canEdit });
+          }
+          toast('Đã đăng nhập', 'ok');
+          await cloudPull(true);
+          location.hash = session.admin ? 'admin' : 'rosters';
+          render();
+        } catch (err) {
+          toast('Đăng nhập thất bại: ' + err.message, 'error');
+        } finally {
+          btn.disabled = false;
+        }
+      },
+    },
+    el('label', { class: 'login-row' }, 'Tên', name), names, pwRow, btn,
+    el('p', { class: 'hint' }, 'Mỗi người sửa được cột mang tên mình trong Rosters (nếu admin cho phép). Admin: gõ tên "admin" rồi nhập password.'));
+    box.append(form);
+    setTimeout(() => name.focus());
+    return el('div', null, head, box);
   }
-  // Link mời: …/#token=xxx – lưu token rồi xoá khỏi địa chỉ
-  const tokenHash = location.hash.match(/^#token=([^&]+)/);
-  if (tokenHash) {
-    setToken(decodeURIComponent(tokenHash[1]));
-    history.replaceState(null, '', location.pathname + location.search + '#rosters');
-    toast('Đã lưu token – thay đổi Rosters sẽ được lưu chung', 'ok');
+
+  function logout() {
+    setSession(null);
+    setCloudStatus(cloudStatusText());
+    if (location.hash === '#login') render();
+    else location.hash = 'login';
   }
-  updateTokenButton();
+
+  function renderAdmin() {
+    const head = el('div', { class: 'page-head' }, el('h1', null, 'Quản lý người dùng'));
+    if (!isAdminSession()) {
+      return el('div', null, head, el('p', null, 'Cần đăng nhập admin. ', el('a', { href: '#login' }, 'Đăng nhập')));
+    }
+    const want = new Map(cloud.users.map((u) => [u.id, u.canEdit]));
+    const saveBtn = el('button', {
+      class: 'btn btn-primary',
+      onclick: async () => {
+        saveBtn.disabled = true;
+        try {
+          const d = await api('setUsers', { token: session.token, users: [...want].map(([id, canEdit]) => ({ id, canEdit })) });
+          takeRemote(d);
+          toast('Đã lưu quyền người dùng', 'ok');
+          render();
+        } catch (err) {
+          toast('Chưa lưu được: ' + err.message, 'error');
+          if (/phiên admin/.test(err.message)) logout();
+        } finally {
+          saveBtn.disabled = false;
+        }
+      },
+    }, 'Lưu quyền');
+    const rows = cloud.users.map((u) => el('tr', null,
+      el('td', null, u.name),
+      el('td', null, el('label', { class: 'check' },
+        el('input', { type: 'checkbox', checked: u.canEdit, onchange: (e) => want.set(u.id, e.target.checked) }),
+        'Sửa cột của mình'))));
+    return el('div', null, head,
+      el('p', { class: 'hint' }, 'Người dùng = member trong Rosters (thêm / đổi tên / xoá member ở trang Rosters). Lịch sử sửa xem ở tab Log của Google Sheet.'),
+      cloud.users.length
+        ? el('table', { class: 'admin-users' }, el('thead', null, el('tr', null, el('th', null, 'Member'), el('th', null, 'Quyền'))), el('tbody', null, rows))
+        : el('p', null, 'Chưa có member nào trên bản chung.'),
+      el('div', { class: 'btn-row' }, saveBtn, el('button', { class: 'btn', onclick: logout }, 'Đăng xuất')));
+  }
+
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && !cloud.busy) cloudPull(true);
   });
 
   window.addEventListener('hashchange', () => { render(); window.scrollTo(0, 0); });
   $('#saveStatus').textContent = 'Tự lưu trên trình duyệt này';
+  setCloudStatus(cloudOn() ? 'Đang tải bản chung…' : '');
   const offStatus = syncSharedOff();
   render();
   if (offStatus === 'auto') toast('Đã nạp bảng team OFF-TYPE chung mới' + (SHARED_OFF.updated ? ` (cập nhật ${SHARED_OFF.updated})` : ''), 'ok');
