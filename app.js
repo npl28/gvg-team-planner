@@ -941,7 +941,7 @@
   async function fetchRemoteCatalog() {
     const [meta, names] = await Promise.all([
       fetchJson(POMA_BASE + '/data/sync_meta_list.json'),
-      fetchJson(POMA_BASE + '/locales/en.json'),
+      fetchJson(POMA_BASE + '/locales/modules/en/base.json'),
     ]);
     const out = [];
     for (const [key, v] of Object.entries(meta)) {
