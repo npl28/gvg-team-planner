@@ -1071,3 +1071,29 @@ body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-sel
 .member-head.mine { box-shadow: inset 0 -3px 0 var(--accent); }
 input.lv[readonly] { cursor: default; }
 input.lv[readonly]:focus { outline-color: var(--border-strong); }
+
+/* ================================================================ So sánh gear */
+.gear-layout { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); align-items: start; max-width: 960px; }
+.gear-inputs, .gear-results { display: grid; gap: 14px; min-width: 0; }
+.gear-card { padding: 14px; min-width: 0; }
+.gear-card h2 { font-size: 14px; margin: 0 0 10px; }
+.gear-common { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.gear-field { display: grid; gap: 4px; align-content: space-between; font-size: 13px; color: var(--text-2); }
+.gear-input { width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
+.gear-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.gear-table th, .gear-table td { padding: 5px 6px; text-align: left; font-weight: 400; }
+.gear-table thead th { font-weight: 700; text-align: center; border-radius: var(--radius-sm); }
+.gear-table td:not(.num) { width: 30%; }
+.gear-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gear-damage th, .gear-damage td { padding: 5px 4px; }
+.gear-damage thead .num { white-space: normal; text-align: right; vertical-align: bottom; }
+.gear-a { background: var(--ok-bg); color: color-mix(in srgb, var(--ok) 80%, var(--text)); }
+.gear-b { background: var(--bad-bg); color: var(--bad); }
+.gear-tag { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.gear-potential { margin: 0 0 8px; font-size: 13px; }
+.gear-verdict { margin: 0 0 8px; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 14px; }
+.gear-results .hint, .gear-help .hint { margin: 0; }
+.gear-results .cloud-banner { margin: 0; }
+.gear-help { margin-top: 14px; max-width: 960px; box-sizing: border-box; font-size: 13px; }
+.gear-help summary { cursor: pointer; font-weight: 600; }
+.gear-help ul { margin: 10px 0; padding-left: 18px; display: grid; gap: 4px; }

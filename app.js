@@ -1100,6 +1100,7 @@
     if (h === 'summary') return { view: 'summary' };
     if (h === 'offtype') return { view: 'offtype' };
     if (h === 'icons') return { view: 'icons' };
+    if (h === 'gear') return { view: 'gear' };
     if (h === 'login') return { view: 'login' };
     if (h === 'admin') return { view: 'admin' };
     return { view: 'rosters' };
@@ -1118,6 +1119,7 @@
     else if (r.view === 'summary') view.replaceChildren(renderSummary());
     else if (r.view === 'offtype') view.replaceChildren(renderOffType());
     else if (r.view === 'icons') view.replaceChildren(renderIconLibrary());
+    else if (r.view === 'gear') view.replaceChildren(renderGear());
     else if (r.view === 'login') view.replaceChildren(renderLogin());
     else if (r.view === 'admin') view.replaceChildren(renderAdmin());
     else {
@@ -1181,6 +1183,7 @@
       ...(CATALOG.length
         ? [item('#icons', ic('image'), 'Kho icon', r.view === 'icons', el('span', { class: 'nav-count' }, CATALOG.length))]
         : []),
+      item('#gear', ic('scale'), 'So sánh gear', r.view === 'gear'),
       ...(SEASONS.length ? [el('div', { class: 'nav-section' }, 'Mùa giải'),
         ...SEASONS.map((x) => item(`#season/${x.id}`, ic('trophy'), x.name, r.view === 'season' && r.season === x))] : []),
       el('div', { class: 'nav-section' }, `Boss · ${state.bosses.length}`,
@@ -1223,16 +1226,17 @@
         offOpen: new Set(Array.isArray(v.offOpen) ? v.offOpen : []),
         colW: v.colW && typeof v.colW === 'object' ? v.colW : {},
         teamOpen: v.teamOpen && typeof v.teamOpen === 'object' ? v.teamOpen : {},
+        gear: v.gear && typeof v.gear === 'object' ? v.gear : {},
       };
     } catch (_) {
-      return { collapsed: new Set(), offOpen: new Set(), colW: {}, teamOpen: {} };
+      return { collapsed: new Set(), offOpen: new Set(), colW: {}, teamOpen: {}, gear: {} };
     }
   })();
 
   function saveUi() {
     try {
       localStorage.setItem(UI_KEY, JSON.stringify({
-        collapsed: [...ui.collapsed], offOpen: [...ui.offOpen], colW: ui.colW, teamOpen: ui.teamOpen,
+        collapsed: [...ui.collapsed], offOpen: [...ui.offOpen], colW: ui.colW, teamOpen: ui.teamOpen, gear: ui.gear,
       }));
     } catch (_) { /* bỏ qua */ }
   }
@@ -3469,6 +3473,208 @@
         '"+ Thêm vào Rosters" sẽ tạo dòng mới trong nhóm type tương ứng. Mỗi pair có role gốc và EX role (nếu có); ' +
         'rê chuột lên ngày ra mắt để xem ngày Grid / EX / EX Role.'),
       toolbar, grid);
+  }
+
+  // ---------------------------------------------------------------- So sánh gear
+  // Công thức theo Gears Comparison Tool (Google Sheet), giá trị mặc định lấy từ sheet.
+
+  const GEAR_SHEET_URL = 'https://docs.google.com/spreadsheets/d/10MdDlSplYgDo_yIMfHpsc3FRvWQcfy080bTMThvPF24/htmlview';
+  const GEAR_MULT_MAX = 15; // tổng hệ số Move + Sync tối đa trên 1 gear
+  const GEAR_QUICK_PCT_PER_5 = 0.75; // Nhanh: ±5 chỉ số ≈ ±0,75% (ở mức trung bình 666)
+  const GEAR_MULT_OPTS = Array.from({ length: GEAR_MULT_MAX + 1 }, (_, i) => i);
+  const GEAR_DEFAULTS = {
+    quick: { aStat: 80, aMove: 0, aSync: 0, bStat: 55, bMove: 0, bSync: 4 },
+    off: { stat: 333, extra: 0, bp: 300, enemy: 100, aStat: 60, aMove: 0, aSync: 0, bStat: 60, bMove: 0, bSync: 12 },
+    def: { stat: 211, extra: 25, enemy: 500, bp: 200, aStat: 20, aMove: 8, aSync: 5, bStat: 0, bMove: 14, bSync: 5 },
+  };
+  const GEAR_MODES = {
+    quick: {
+      label: 'Nhanh',
+      sub: 'Chỉ cần chỉ số và hệ số của gear, dựa trên mức tấn công trung bình.',
+      rows: [
+        { key: 'Stat', label: 'Chỉ số tấn công +', options: [80, 75, 70, 65, 60, 55, 50, 45, 40] },
+        { key: 'Move', label: 'Hệ số Move %', options: GEAR_MULT_OPTS },
+        { key: 'Sync', label: 'Hệ số Sync %', options: GEAR_MULT_OPTS },
+      ],
+    },
+    off: {
+      label: 'Tấn công',
+      sub: 'Chi tiết hơn: tính theo chỉ số của pair và đòn cụ thể.',
+      common: [
+        { key: 'stat', label: 'Atk / SpAtk của pair' },
+        { key: 'extra', label: 'Chỉ số thêm (grid, theme)', options: [0, 10, 20, 30, 50, 75, 100] },
+        { key: 'bp', label: 'BP đòn' },
+        { key: 'enemy', label: 'Def / SpDef đối thủ' },
+      ],
+      rows: [
+        { key: 'Stat', label: 'Chỉ số tấn công +' },
+        { key: 'Move', label: 'Hệ số Move %', options: GEAR_MULT_OPTS },
+        { key: 'Sync', label: 'Hệ số Sync %', options: GEAR_MULT_OPTS },
+      ],
+    },
+    def: {
+      label: 'Phòng thủ',
+      sub: 'So sánh sát thương nhận vào: càng ít càng tốt.',
+      common: [
+        { key: 'stat', label: 'Def / SpDef của pair' },
+        { key: 'extra', label: 'Chỉ số thêm (grid)' },
+        { key: 'enemy', label: 'Atk / SpAtk đối thủ' },
+        { key: 'bp', label: 'BP đòn đối thủ' },
+      ],
+      rows: [
+        { key: 'Stat', label: 'Chỉ số phòng thủ +' },
+        { key: 'Move', label: 'Giảm sát thương Move %', max: 100 },
+        { key: 'Sync', label: 'Giảm sát thương Sync %', max: 100 },
+      ],
+    },
+  };
+
+  const gearNum = (v) => Math.max(0, +v || 0);
+  const gearFmt = (n, digits = 2) => n.toLocaleString('vi-VN', { maximumFractionDigits: digits });
+
+  /** Gear nào hơn và hơn bao nhiêu %; rel = so tương đối với gear còn lại, lower = càng thấp càng tốt. */
+  function gearCompare(a, b, { rel = true, lower = false } = {}) {
+    const winner = (lower ? a <= b : a >= b) ? 'A' : 'B';
+    const [w, l] = winner === 'A' ? [a, b] : [b, a];
+    const pct = rel ? Math.abs(w - l) / l * 100 : Math.abs(w - l);
+    if (!Number.isFinite(pct)) return null;
+    return { winner: pct < (rel ? 0.01 : 1e-9) ? null : winner, pct };
+  }
+
+  function gearCalc(mode, raw) {
+    const v = Object.fromEntries(Object.entries(raw).map(([k, x]) => [k, gearNum(x)]));
+    if (mode === 'quick') {
+      const statPct = (s) => (s - 40) / 5 * GEAR_QUICK_PCT_PER_5;
+      const potential = (s, move, sync) => (statPct(s) * 2 + move + sync) * 100 / (statPct(80) * 2 + GEAR_MULT_MAX);
+      const opt = { rel: false };
+      return {
+        potential: [potential(v.aStat, v.aMove, v.aSync), potential(v.bStat, v.bMove, v.bSync)],
+        move: gearCompare(statPct(v.aStat) + v.aMove, statPct(v.bStat) + v.bMove, opt),
+        sync: gearCompare(statPct(v.aStat) + v.aSync, statPct(v.bStat) + v.bSync, opt),
+      };
+    }
+    const total = v.stat + v.extra;
+    if (mode === 'off') {
+      const dmg = (bonus) => (total + bonus) * v.bp / (v.enemy * 2);
+      const row = (a, b) => ({ base: dmg(0), star: dmg(60), a: dmg(v.aStat) * (a / 100 + 1), b: dmg(v.bStat) * (b / 100 + 1) });
+      const move = row(v.aMove, v.bMove), sync = row(v.aSync, v.bSync);
+      return {
+        move: gearCompare(move.a, move.b), sync: gearCompare(sync.a, sync.b),
+        table: { move, sync }, starBonus: 60, noteStat: total + 60, noteStep: 5,
+        notePct: (total + 65) / (total + 60) * 100 - 100,
+      };
+    }
+    const dmg = (bonus) => v.enemy * v.bp / ((total + bonus) * 2);
+    const left = (x) => (100 - Math.min(100, x)) / 100;
+    const row = (a, b) => ({ base: dmg(0), star: dmg(20), a: dmg(v.aStat) * left(a), b: dmg(v.bStat) * left(b) });
+    const move = row(v.aMove, v.bMove), sync = row(v.aSync, v.bSync);
+    const opt = { lower: true };
+    return {
+      move: gearCompare(move.a, move.b, opt), sync: gearCompare(sync.a, sync.b, opt),
+      table: { move, sync }, starBonus: 20, noteStat: total, noteStep: 10,
+      notePct: (1 - total / (total + 10)) * 100,
+    };
+  }
+
+  function gearInput(values, key, spec, label, onChange) {
+    const change = (e) => { values[key] = e.target.value; onChange(); };
+    if (spec.options) {
+      const opts = spec.options.includes(+values[key]) ? spec.options : [+values[key], ...spec.options];
+      return el('select', { class: 'field gear-input', 'aria-label': label, onchange: change },
+        opts.map((o) => el('option', { value: o, selected: o === +values[key] }, o)));
+    }
+    return el('input', {
+      class: 'field gear-input', type: 'number', inputmode: 'numeric', min: 0, max: spec.max, step: 1,
+      value: values[key], 'aria-label': label, oninput: change,
+    });
+  }
+
+  function gearVerdict(cmp, kind, defensive) {
+    if (!cmp) return el('li', { class: 'muted' }, `${kind}: nhập đủ chỉ số để so sánh.`);
+    if (!cmp.winner) {
+      return el('li', null, defensive ? `Hai gear nhận sát thương ${kind} bằng nhau.` : `${kind} của hai gear mạnh bằng nhau.`);
+    }
+    const other = cmp.winner === 'A' ? 'B' : 'A';
+    const pct = el('strong', null, `${gearFmt(cmp.pct)}%`);
+    return el('li', null,
+      el('span', { class: 'gear-tag gear-' + cmp.winner.toLowerCase() }, 'Gear ' + cmp.winner),
+      defensive ? [' nhận ít hơn ', pct, ` sát thương ${kind} so với Gear ${other}`]
+        : [` ${kind} mạnh hơn Gear ${other} `, pct]);
+  }
+
+  function gearDamageTable(r) {
+    const num = (x) => (Number.isFinite(x) ? gearFmt(x, 1) : '–');
+    const cells = (row) => [row.base, row.star, row.a, row.b].map((x) => el('td', { class: 'num' }, num(x)));
+    return el('div', { class: 'card gear-card' },
+      el('h2', null, 'Sát thương ước tính'),
+      el('div', { class: 'scroll' }, el('table', { class: 'gear-table gear-damage' },
+        el('thead', null, el('tr', null, el('th', null, ''), el('th', { class: 'num' }, 'Không gear'),
+          el('th', { class: 'num' }, `Gear 3★ (+${r.starBonus})`), el('th', { class: 'num gear-a' }, 'Gear A'), el('th', { class: 'num gear-b' }, 'Gear B'))),
+        el('tbody', null,
+          el('tr', null, el('th', { scope: 'row' }, 'Move'), cells(r.table.move)),
+          el('tr', null, el('th', { scope: 'row' }, 'Sync'), cells(r.table.sync))))));
+  }
+
+  function gearResults(mode, values) {
+    const r = gearCalc(mode, values);
+    const defensive = mode === 'def';
+    const overLimit = !defensive && ['a', 'b'].some((g) => gearNum(values[g + 'Move']) + gearNum(values[g + 'Sync']) > GEAR_MULT_MAX);
+    const note = mode === 'quick'
+      ? `Tính theo chỉ số tấn công trung bình 666: mỗi ±5 chỉ số ≈ ±${gearFmt(GEAR_QUICK_PCT_PER_5)}%.`
+      : Number.isFinite(r.notePct) && r.noteStat > 0
+        ? `Ở mức ${gearFmt(r.noteStat)} chỉ số ${defensive ? 'phòng thủ' : 'tấn công'}, +${r.noteStep} ≈ ${defensive ? 'giảm ' : '+'}${gearFmt(r.notePct)}% sát thương${defensive ? ' nhận vào' : ''}.`
+        : null;
+    return [
+      overLimit ? el('p', { class: 'cloud-banner', role: 'alert' }, `Một gear không thể có quá ${GEAR_MULT_MAX}% tổng hệ số.`) : null,
+      el('div', { class: 'card gear-card' },
+        el('h2', null, 'Kết quả'),
+        r.potential ? el('p', { class: 'gear-potential' }, 'Potential: ',
+          el('span', { class: 'gear-tag gear-a' }, 'A'), ' ', el('strong', null, `${gearFmt(r.potential[0], 0)}/100`), ' · ',
+          el('span', { class: 'gear-tag gear-b' }, 'B'), ' ', el('strong', null, `${gearFmt(r.potential[1], 0)}/100`)) : null,
+        el('ul', { class: 'gear-verdict' }, gearVerdict(r.move, 'Move', defensive), gearVerdict(r.sync, 'Sync', defensive)),
+        note ? el('p', { class: 'hint' }, note) : null),
+      r.table ? gearDamageTable(r) : null,
+    ];
+  }
+
+  function renderGear() {
+    const mode = GEAR_MODES[ui.gear.mode] ? ui.gear.mode : 'quick';
+    const cfg = GEAR_MODES[mode];
+    const values = ui.gear[mode] = { ...GEAR_DEFAULTS[mode], ...ui.gear[mode] };
+    const results = el('div', { class: 'gear-results', 'aria-live': 'polite' });
+    const update = () => {
+      results.replaceChildren(...gearResults(mode, values).filter(Boolean));
+      saveUi();
+    };
+
+    const page = el('div', null,
+      el('div', { class: 'page-head' },
+        el('h1', null, 'So sánh gear'),
+        el('span', { class: 'page-sub' }, cfg.sub)),
+      el('div', { class: 'toolbar' },
+        segmented('Kiểu so sánh', Object.entries(GEAR_MODES).map(([key, m]) => ({ key, label: m.label })), () => mode,
+          (key) => { ui.gear.mode = key; saveUi(); render(); })),
+      el('div', { class: 'gear-layout' },
+        el('div', { class: 'gear-inputs' },
+          cfg.common ? el('div', { class: 'card gear-card gear-common' }, cfg.common.map((f) => el('label', { class: 'gear-field' },
+            f.label, gearInput(values, f.key, f, f.label, update)))) : null,
+          el('div', { class: 'card gear-card' }, el('table', { class: 'gear-table' },
+            el('thead', null, el('tr', null, el('th', null, ''), el('th', { class: 'gear-a' }, 'Gear A'), el('th', { class: 'gear-b' }, 'Gear B'))),
+            el('tbody', null, cfg.rows.map((f) => el('tr', null,
+              el('th', { scope: 'row' }, f.label),
+              ['a', 'b'].map((g) => el('td', null, gearInput(values, g + f.key, f, `Gear ${g.toUpperCase()}: ${f.label}`, update))))))))),
+        results),
+      el('details', { class: 'card gear-card gear-help' },
+        el('summary', null, 'Cách nhập cho đúng'),
+        el('ul', null,
+          el('li', null, 'Chỉ nhập chỉ số chưa buff: buff ↑6 không tính vào chỉ số gốc và hệ số.'),
+          el('li', null, 'Atk và SpAtk tính giống nhau; Def và SpDef cũng vậy.'),
+          el('li', null, 'Chỉ cộng các hệ số đúng với chức năng hoặc tình huống dùng gear (ví dụ chỉ tính dòng Psychic Terrain khi so gear sân Psychic).'),
+          el('li', null, 'So sánh Pin: lấy 60 làm nền rồi cộng chỉ số của gear (+20 thì nhập 80).'),
+          el('li', null, 'Kết quả là xấp xỉ, sát thương thực tế có thể khác.')),
+        el('p', { class: 'hint' }, 'Công thức từ ', el('a', { href: GEAR_SHEET_URL, target: '_blank', rel: 'noopener' }, 'Gears Comparison Tool'), '.')));
+    update();
+    return page;
   }
 
   // ---------------------------------------------------------------- Mùa giải (record từ Excel – chỉ xem)
