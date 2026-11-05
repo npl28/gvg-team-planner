@@ -1101,6 +1101,7 @@
     if (h === 'offtype') return { view: 'offtype' };
     if (h === 'icons') return { view: 'icons' };
     if (h === 'gear') return { view: 'gear' };
+    if (h === 'gear-roll') return { view: 'gearRoll' };
     if (h === 'login') return { view: 'login' };
     if (h === 'admin') return { view: 'admin' };
     return { view: 'rosters' };
@@ -1120,6 +1121,7 @@
     else if (r.view === 'offtype') view.replaceChildren(renderOffType());
     else if (r.view === 'icons') view.replaceChildren(renderIconLibrary());
     else if (r.view === 'gear') view.replaceChildren(renderGear());
+    else if (r.view === 'gearRoll') view.replaceChildren(renderGearRoll());
     else if (r.view === 'login') view.replaceChildren(renderLogin());
     else if (r.view === 'admin') view.replaceChildren(renderAdmin());
     else {
@@ -1184,6 +1186,7 @@
         ? [item('#icons', ic('image'), 'Kho icon', r.view === 'icons', el('span', { class: 'nav-count' }, CATALOG.length))]
         : []),
       item('#gear', ic('scale'), 'So sánh gear', r.view === 'gear'),
+      item('#gear-roll', ic('dice'), 'Roll gear', r.view === 'gearRoll'),
       ...(SEASONS.length ? [el('div', { class: 'nav-section' }, 'Mùa giải'),
         ...SEASONS.map((x) => item(`#season/${x.id}`, ic('trophy'), x.name, r.view === 'season' && r.season === x))] : []),
       el('div', { class: 'nav-section' }, `Boss · ${state.bosses.length}`,
@@ -3674,6 +3677,411 @@
           el('li', null, 'Kết quả là xấp xỉ, sát thương thực tế có thể khác.')),
         el('p', { class: 'hint' }, 'Công thức từ ', el('a', { href: GEAR_SHEET_URL, target: '_blank', rel: 'noopener' }, 'Gears Comparison Tool'), '.')));
     update();
+    return page;
+  }
+
+  // ---------------------------------------------------------------- Mô phỏng roll gear
+  // Dữ liệu trong skillgears.js (tools/skillgears_to_js.py lấy từ Serebii).
+  const SG = window.SKILL_GEAR || null;
+  const SG_GEARS = ['Bracelet', 'Bandanna', 'Pin'];
+  const SG_MAIN_STAT = { Bracelet: 'Attack', Bandanna: 'Sp. Attack', Pin: 'HP' }; // stat luôn có theo loại gear
+  const SG_SLOTS = 3; // tối đa 3 ô mỗi nhóm
+  const SG_STAT_STEP = 5;
+  const SG_MAX_AUTO = 200000; // giới hạn số lông cho một lần "Roll đến khi đạt"
+  const SG_CATS = [
+    { key: 'themes', lock: 'theme', label: 'Theme' },
+    { key: 'stats', lock: 'stat', label: 'Chỉ số' },
+    { key: 'effects', lock: 'effect', label: 'Hiệu ứng' },
+  ];
+
+  const sgFeather = (id) => SG.feathers.find((f) => f.id === id) || SG.feathers[0];
+  const sgStatRows = (feather, gearType) => SG.stats[feather.special ? 'special' : 'regular'][gearType]
+    .map(([name, min, max]) => ({ name, min, max }));
+  const sgThemes = (feather) => feather.themes.map((i) => SG.themes[i]);
+  const sgEffects = (feather) => feather.effects.map((i) => SG.effects[i][0]);
+  const sgEffectDesc = (name) => (SG.effects.find((e) => e[0] === name) || [])[1] || '';
+  const sgEmptyGear = () => ({ themes: [], stats: [], effects: [] });
+  const sgEmptyLocks = () => ({ theme: null, stat: null, effect: null });
+  const sgIsEmpty = (gear) => !gear.themes.length && !gear.stats.length && !gear.effects.length;
+
+  function sgStatValues({ min, max }) {
+    const out = [];
+    for (let v = min; v <= max; v += SG_STAT_STEP) out.push(v);
+    return out;
+  }
+
+  /** Xác suất ra 1/2/3 ô; Special luôn đủ 3 ô. */
+  function sgCountOdds(feather, weights) {
+    if (feather.special) return [0, 0, 1];
+    const w = [0, 1, 2].map((i) => gearNum(weights[i]));
+    const sum = w.reduce((a, b) => a + b, 0);
+    return sum ? w.map((x) => x / sum) : [1 / 3, 1 / 3, 1 / 3];
+  }
+
+  function sgDrawCount(odds) {
+    let r = Math.random();
+    for (let i = 0; i < SG_SLOTS; i++) {
+      r -= odds[i];
+      if (r < 0) return i + 1;
+    }
+    return SG_SLOTS;
+  }
+
+  /** Bốc không lặp tối đa `n` phần tử. */
+  function sgDraw(items, n) {
+    const pool = items.slice();
+    const count = Math.max(0, Math.min(n, pool.length));
+    for (let i = 0; i < count; i++) {
+      const j = i + Math.floor(Math.random() * (pool.length - i));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return pool.slice(0, count);
+  }
+
+  const sgStatValue = (row) => {
+    const values = sgStatValues(row);
+    return values[Math.floor(Math.random() * values.length)];
+  };
+
+  function sgRollNames(names, locked, odds) {
+    const kept = locked ? [locked] : [];
+    return [...kept, ...sgDraw(names.filter((n) => n !== locked), sgDrawCount(odds) - kept.length)];
+  }
+
+  /** Một lần dùng lông: mỗi nhóm tự bốc số ô, ô đã ghim Ever Pin giữ nguyên và tính vào số ô. */
+  function sgRoll(feather, gearType, gear, locks, weights) {
+    const odds = sgCountOdds(feather, weights);
+    const rows = sgStatRows(feather, gearType);
+    const main = SG_MAIN_STAT[gearType];
+    const lockedStat = gear.stats.find((s) => s.name === locks.stat);
+    const kept = lockedStat ? [lockedStat] : [];
+    const mainRow = rows.find((r) => r.name === main);
+    if (mainRow && lockedStat?.name !== main) kept.push({ name: main, value: sgStatValue(mainRow) });
+    const rest = rows.filter((r) => !kept.some((s) => s.name === r.name));
+    return {
+      themes: sgRollNames(sgThemes(feather), gear.themes.includes(locks.theme) ? locks.theme : null, odds),
+      effects: sgRollNames(sgEffects(feather), gear.effects.includes(locks.effect) ? locks.effect : null, odds),
+      stats: [...kept, ...sgDraw(rest, sgDrawCount(odds) - kept.length).map((r) => ({ name: r.name, value: sgStatValue(r) }))],
+    };
+  }
+
+  function sgMeets(gear, target) {
+    return (!target.theme || gear.themes.includes(target.theme))
+      && (!target.effect || gear.effects.includes(target.effect))
+      && (!target.stat || gear.stats.some((s) => s.name === target.stat && s.value >= gearNum(target.min)));
+  }
+
+  /** Xác suất một ô cụ thể rơi vào gear, khi đã có `kept` ô giữ sẵn và còn `n` lựa chọn trong pool. */
+  function sgSlotChance(odds, kept, n) {
+    if (!n) return 0;
+    return odds.reduce((sum, p, i) => sum + p * Math.min(Math.max(i + 1 - kept, 0), n), 0) / n;
+  }
+
+  function sgNameChance(names, wanted, locked, odds) {
+    if (!wanted || wanted === locked) return 1;
+    if (!names.includes(wanted)) return 0;
+    return locked
+      ? sgSlotChance(odds, 1, names.filter((n) => n !== locked).length)
+      : sgSlotChance(odds, 0, names.length);
+  }
+
+  function sgStatChance(rows, gearType, gear, locks, target, odds) {
+    if (!target.stat) return 1;
+    const min = gearNum(target.min);
+    const locked = gear.stats.find((s) => s.name === locks.stat);
+    if (locked?.name === target.stat) return locked.value >= min ? 1 : 0;
+    const row = rows.find((r) => r.name === target.stat);
+    if (!row) return 0;
+    const values = sgStatValues(row);
+    const valueChance = values.filter((v) => v >= min).length / values.length;
+    const main = SG_MAIN_STAT[gearType];
+    if (target.stat === main) return valueChance;
+    const keptNames = new Set([main, ...(locked ? [locked.name] : [])]);
+    return valueChance * sgSlotChance(odds, keptNames.size, rows.filter((r) => !keptNames.has(r.name)).length);
+  }
+
+  /** Xác suất đạt mục tiêu trong một lần roll (3 nhóm bốc độc lập). */
+  function sgChance(cfg) {
+    const feather = sgFeather(cfg.feather);
+    const odds = sgCountOdds(feather, cfg.weights);
+    const lockOf = (list, name) => (list.includes(name) ? name : null);
+    return {
+      theme: sgNameChance(sgThemes(feather), cfg.target.theme, lockOf(cfg.gear.themes, cfg.locks.theme), odds),
+      stat: sgStatChance(sgStatRows(feather, cfg.gearType), cfg.gearType, cfg.gear, cfg.locks, cfg.target, odds),
+      effect: sgNameChance(sgEffects(feather), cfg.target.effect, lockOf(cfg.gear.effects, cfg.locks.effect), odds),
+    };
+  }
+
+  const sgHasTarget = (t) => !!(t.theme || t.stat || t.effect);
+  const sgFmtPct = (p) => {
+    const pct = p * 100;
+    return `${pct.toLocaleString('vi-VN', pct >= 1 ? { maximumFractionDigits: 2 } : { maximumSignificantDigits: 2 })}%`;
+  };
+  /** Số lông cần để đạt với xác suất `q`. */
+  const sgFeathersFor = (p, q) => (p >= 1 ? 1 : Math.ceil(Math.log(1 - q) / Math.log(1 - p)));
+
+  function sgConfig() {
+    const raw = ui.gear.roll && typeof ui.gear.roll === 'object' ? ui.gear.roll : {};
+    const gearOf = (g) => ({
+      themes: Array.isArray(g?.themes) ? g.themes : [],
+      stats: Array.isArray(g?.stats) ? g.stats : [],
+      effects: Array.isArray(g?.effects) ? g.effects : [],
+    });
+    ui.gear.roll = {
+      feather: sgFeather(raw.feather).id,
+      gearType: SG_GEARS.includes(raw.gearType) ? raw.gearType : SG_GEARS[0],
+      weights: Array.isArray(raw.weights) && raw.weights.length === SG_SLOTS ? raw.weights : [1, 1, 1],
+      target: { theme: '', stat: '', min: 0, effect: '', ...raw.target },
+      locks: { ...sgEmptyLocks(), ...raw.locks },
+      gear: gearOf(raw.gear),
+      pending: raw.pending ? gearOf(raw.pending) : null,
+      used: gearNum(raw.used),
+    };
+    return ui.gear.roll;
+  }
+
+  function sgFeatherOptions(select, filter, selectedId) {
+    const q = filter.trim().toLowerCase();
+    const label = (f) => (f.special ? `${f.name} · ${sgThemes(f).join(', ')}` : f.name);
+    const hit = (f) => f.id === selectedId || !q
+      || label(f).toLowerCase().includes(q) || (f.special && sgEffects(f).some((n) => n.toLowerCase().includes(q)));
+    const group = (title, list) => (list.length
+      ? el('optgroup', { label: title }, list.map((f) => el('option', { value: f.id, selected: f.id === selectedId }, label(f))))
+      : null);
+    select.replaceChildren(...[
+      group('Lông thường', SG.feathers.filter((f) => !f.special && hit(f))),
+      group('Lông Special', SG.feathers.filter((f) => f.special && hit(f))),
+    ].filter(Boolean));
+    select.value = selectedId;
+  }
+
+  function sgSelect(label, value, options, onChange) {
+    return el('label', { class: 'gear-field' }, label, el('select', {
+      class: 'field gear-input',
+      onchange: (e) => onChange(e.target.value),
+    }, options.map(([v, text]) => el('option', { value: v, selected: String(v) === String(value) }, text))));
+  }
+
+  /** Lựa chọn hiện tại không có trong lông đang chọn thì vẫn giữ và ghi chú, để đổi lông không mất mục tiêu. */
+  const sgMissing = (value, names) => (value && !names.includes(value) ? [[value, `${value} (lông này không có)`]] : []);
+
+  function sgSlotRows(cfg, gear, cat, lockable, refresh) {
+    const items = gear[cat.key];
+    if (!items.length) return el('p', { class: 'hint' }, '–');
+    return el('ul', { class: 'roll-slots' }, items.map((item) => {
+      const name = cat.key === 'stats' ? item.name : item;
+      const text = cat.key === 'stats' ? `${item.name} +${item.value}` : item;
+      const locked = lockable && cfg.locks[cat.lock] === name;
+      return el('li', { class: 'roll-slot' + (locked ? ' locked' : ''), title: cat.key === 'effects' ? sgEffectDesc(name) : null },
+        el('span', null, text),
+        lockable ? el('button', {
+          type: 'button',
+          class: 'icon-btn plain roll-pin',
+          title: locked ? 'Bỏ ghim Ever Pin' : 'Ghim Ever Pin: giữ ô này khi roll lại',
+          'aria-label': `${locked ? 'Bỏ ghim' : 'Ghim'} ${text}`,
+          'aria-pressed': String(!!locked),
+          onclick: () => { cfg.locks[cat.lock] = locked ? null : name; saveUi(); refresh(); },
+        }, ic('pin')) : null);
+    }));
+  }
+
+  function sgGearCard(cfg, gear, title, lockable, refresh, extra) {
+    const met = sgHasTarget(cfg.target) && !sgIsEmpty(gear) && sgMeets(gear, cfg.target);
+    return el('div', { class: 'card gear-card' },
+      el('div', { class: 'roll-card-head' }, el('h2', null, title),
+        met ? el('span', { class: 'gear-tag gear-a' }, 'Đạt mục tiêu') : null),
+      SG_CATS.map((cat) => el('div', { class: 'roll-group' }, el('h3', null, cat.label), sgSlotRows(cfg, gear, cat, lockable, refresh))),
+      extra);
+  }
+
+  function sgChanceCard(cfg) {
+    const { target } = cfg;
+    if (!sgHasTarget(target)) return el('p', { class: 'hint' }, 'Chọn mục tiêu để xem xác suất và số lông cần.');
+    const c = sgChance(cfg);
+    const p = c.theme * c.stat * c.effect;
+    const parts = [
+      target.theme ? `Theme ${sgFmtPct(c.theme)}` : null,
+      target.stat ? `Chỉ số ${sgFmtPct(c.stat)}` : null,
+      target.effect ? `Hiệu ứng ${sgFmtPct(c.effect)}` : null,
+    ].filter(Boolean);
+    if (!p) {
+      return el('p', { class: 'cloud-banner', role: 'status' },
+        'Mục tiêu này không thể đạt với lông và Ever Pin đang chọn. ', parts.join(' · '));
+    }
+    return el('div', { class: 'roll-odds' },
+      el('p', null, 'Mỗi lông: ', el('strong', null, sgFmtPct(p)), ` (${parts.join(' · ')})`),
+      el('ul', { class: 'roll-odds-list' },
+        el('li', null, el('strong', null, gearFmt(Math.ceil(1 / p), 0)), ' lông trung bình'),
+        el('li', null, el('strong', null, gearFmt(sgFeathersFor(p, 0.5), 0)), ' lông: 50% đạt'),
+        el('li', null, el('strong', null, gearFmt(sgFeathersFor(p, 0.9), 0)), ' lông: 90% đạt')));
+  }
+
+  function renderGearRoll() {
+    if (!SG) return el('div', { class: 'page-head' }, el('h1', null, 'Mô phỏng roll gear'), el('span', { class: 'page-sub' }, 'Thiếu file skillgears.js.'));
+    const cfg = sgConfig();
+    const targetBox = el('div', { class: 'gear-inputs' });
+    const results = el('div', { class: 'gear-results', 'aria-live': 'polite' });
+    const oddsBox = el('div', { class: 'roll-odds-box' });
+    const poolNote = el('p', { class: 'hint' });
+    const effectNote = el('p', { class: 'hint roll-effect-note' });
+    const refreshOdds = () => oddsBox.replaceChildren(sgChanceCard(cfg));
+
+    /** Ghim chỉ còn hiệu lực khi ô đó vẫn nằm trên gear. */
+    const dropStaleLocks = () => {
+      if (!cfg.gear.themes.includes(cfg.locks.theme)) cfg.locks.theme = null;
+      if (!cfg.gear.effects.includes(cfg.locks.effect)) cfg.locks.effect = null;
+      if (!cfg.gear.stats.some((s) => s.name === cfg.locks.stat)) cfg.locks.stat = null;
+    };
+    const roll = () => {
+      const next = sgRoll(sgFeather(cfg.feather), cfg.gearType, cfg.gear, cfg.locks, cfg.weights);
+      cfg.used += 1;
+      if (sgIsEmpty(cfg.gear)) cfg.gear = next;
+      else cfg.pending = next;
+      saveUi();
+      refresh();
+    };
+    const choose = (takeNew) => {
+      if (takeNew) cfg.gear = cfg.pending;
+      cfg.pending = null;
+      dropStaleLocks();
+      saveUi();
+      refresh();
+    };
+    const rollUntil = () => {
+      if (!sgHasTarget(cfg.target)) { toast('Hãy chọn mục tiêu trước.'); return; }
+      const c = sgChance(cfg);
+      if (!(c.theme * c.stat * c.effect)) { toast('Mục tiêu này không thể đạt.', 'error'); return; }
+      const feather = sgFeather(cfg.feather);
+      let done = 0;
+      let hit = null;
+      while (done < SG_MAX_AUTO && !hit) {
+        const next = sgRoll(feather, cfg.gearType, cfg.gear, cfg.locks, cfg.weights);
+        done += 1;
+        if (sgMeets(next, cfg.target)) hit = next;
+      }
+      cfg.used += done;
+      if (hit) cfg.gear = hit;
+      toast(hit ? `Đạt mục tiêu sau ${gearFmt(done, 0)} lông.` : `Chưa đạt sau ${gearFmt(done, 0)} lông, giữ nguyên gear.`, hit ? 'ok' : 'error');
+      saveUi();
+      refresh();
+    };
+    const reset = () => {
+      Object.assign(cfg, { gear: sgEmptyGear(), pending: null, used: 0, locks: sgEmptyLocks() });
+      saveUi();
+      refresh();
+    };
+
+    function refresh() {
+      const pending = !!cfg.pending;
+      results.replaceChildren(...[
+        el('div', { class: 'card gear-card' },
+          oddsBox,
+          el('div', { class: 'roll-actions' },
+            el('button', { type: 'button', class: 'btn btn-primary', disabled: pending, title: pending ? 'Chọn giữ gear cũ hoặc lấy kết quả mới trước' : null, onclick: roll }, ic('dice'), 'Dùng 1 lông'),
+            el('button', { type: 'button', class: 'btn', disabled: pending, title: pending ? 'Chọn giữ gear cũ hoặc lấy kết quả mới trước' : null, onclick: rollUntil }, 'Roll đến khi đạt'),
+            el('button', { type: 'button', class: 'btn btn-ghost', onclick: reset }, 'Làm lại từ đầu')),
+          el('p', { class: 'hint' }, `Đã dùng ${gearFmt(cfg.used, 0)} lông cho gear này.`)),
+        pending ? sgGearCard(cfg, cfg.pending, 'Kết quả mới', false, refresh, el('div', { class: 'btn-row roll-choice' },
+          el('button', { type: 'button', class: 'btn btn-primary', onclick: () => choose(true) }, 'Lấy kết quả mới'),
+          el('button', { type: 'button', class: 'btn', onclick: () => choose(false) }, 'Giữ gear cũ'))) : null,
+        sgIsEmpty(cfg.gear)
+          ? el('div', { class: 'card gear-card' }, el('h2', null, 'Gear hiện tại'), el('p', { class: 'hint' }, 'Gear chưa mở khóa. Bấm "Dùng 1 lông" để bắt đầu.'))
+          : sgGearCard(cfg, cfg.gear, 'Gear hiện tại', true, refresh),
+      ].filter(Boolean));
+      refreshOdds();
+    }
+
+    function renderTarget() {
+      const feather = sgFeather(cfg.feather);
+      const rows = sgStatRows(feather, cfg.gearType);
+      const themes = sgThemes(feather);
+      const effects = sgEffects(feather);
+      const { target } = cfg;
+      const statRow = rows.find((r) => r.name === target.stat);
+      const statNames = rows.map((r) => r.name);
+      const noteFor = (name) => (name && !effects.includes(name) ? 'Lông này không có hiệu ứng này.' : sgEffectDesc(name));
+      poolNote.textContent = feather.special
+        ? `Kết quả cố định: ${themes.join(', ')}. Hiệu ứng: ${effects.join(', ')}.`
+        : `Pool: ${themes.length} theme, ${effects.length} hiệu ứng, ${rows.length} chỉ số.`;
+      const change = () => { saveUi(); renderTarget(); refreshOdds(); refresh(); };
+      effectNote.textContent = noteFor(target.effect);
+      targetBox.replaceChildren(el('div', { class: 'card gear-card' },
+        el('h2', null, 'Mục tiêu'),
+        el('div', { class: 'gear-common' },
+          sgSelect('Theme', target.theme, [['', 'Bất kỳ'], ...sgMissing(target.theme, themes), ...themes.map((n) => [n, n])],
+            (v) => { target.theme = v; change(); }),
+          sgSelect('Chỉ số', target.stat, [['', 'Bất kỳ'], ...sgMissing(target.stat, statNames), ...statNames.map((n) => [n, n])], (v) => {
+            target.stat = v;
+            const row = rows.find((r) => r.name === v);
+            target.min = row ? row.min : 0;
+            change();
+          }),
+          statRow ? sgSelect('Tối thiểu', target.min, sgStatValues(statRow).map((v) => [v, `+${v}`]),
+            (v) => { target.min = +v; change(); }) : null,
+          el('label', { class: 'gear-field roll-wide' }, 'Hiệu ứng',
+            el('input', {
+              class: 'field gear-input', list: 'rollEffects', value: target.effect, placeholder: 'Gõ để tìm, bỏ trống là bất kỳ',
+              onchange: (e) => {
+                target.effect = e.target.value.trim();
+                effectNote.textContent = noteFor(target.effect);
+                saveUi();
+                refresh();
+              },
+            }),
+            el('datalist', { id: 'rollEffects' }, effects.map((n) => el('option', { value: n }))))),
+        effectNote));
+    }
+
+    const featherSelect = el('select', {
+      class: 'field gear-input',
+      'aria-label': 'Loại lông',
+      onchange: (e) => { cfg.feather = e.target.value; saveUi(); renderTarget(); refresh(); },
+    });
+    sgFeatherOptions(featherSelect, '', cfg.feather);
+    const countInputs = ['1 ô', '2 ô', '3 ô'].map((label, i) => el('label', { class: 'gear-field' }, label, el('input', {
+      class: 'field gear-input', type: 'number', min: 0, step: 1, value: cfg.weights[i],
+      oninput: (e) => { cfg.weights[i] = gearNum(e.target.value); saveUi(); refreshOdds(); },
+    })));
+
+    const page = el('div', null,
+      el('div', { class: 'page-head' },
+        el('h1', null, 'Mô phỏng roll gear'),
+        el('span', { class: 'page-sub' }, 'Thử dùng Skill Feather, ghim Ever Pin và ước tính số lông cần cho một gear.')),
+      el('div', { class: 'toolbar' },
+        segmented('Loại gear', SG_GEARS.map((key) => ({ key, label: key })), () => cfg.gearType, (key) => {
+          cfg.gearType = key;
+          reset();
+          renderTarget();
+        })),
+      el('div', { class: 'gear-layout' },
+        el('div', { class: 'gear-inputs' },
+          el('div', { class: 'card gear-card' },
+            el('h2', null, 'Loại lông'),
+            el('div', { class: 'roll-feather' },
+              el('input', {
+                class: 'field gear-input', type: 'search', placeholder: 'Lọc lông Special theo theme hoặc hiệu ứng', 'aria-label': 'Lọc lông',
+                oninput: (e) => sgFeatherOptions(featherSelect, e.target.value, cfg.feather),
+              }),
+              featherSelect),
+            poolNote),
+          targetBox,
+          el('details', { class: 'card gear-card gear-help roll-help' },
+            el('summary', null, 'Tỉ lệ số ô (tự chỉnh được)'),
+            el('p', { class: 'hint' }, 'Game không công bố tỉ lệ ra 1, 2 hay 3 ô. Mặc định xem như bằng nhau; nhập trọng số để thử giả định khác. Lông Special luôn đủ ô.'),
+            el('div', { class: 'gear-common roll-weights' }, countInputs))),
+        results),
+      el('details', { class: 'card gear-card gear-help' },
+        el('summary', null, 'Cách mô phỏng và độ tin cậy'),
+        el('ul', null,
+          el('li', null, 'Danh sách theme, hiệu ứng, khoảng chỉ số lấy từ Serebii; tỉ lệ trong mỗi danh sách là đều nhau.'),
+          el('li', null, 'Mỗi gear tối đa 3 theme, 3 chỉ số, 3 hiệu ứng (theo thông báo của game). Bracelet luôn có Attack, Bandanna luôn có Sp. Attack, Pin luôn có HP; lông Special cho kết quả cố định (theo Bulbapedia).'),
+          el('li', null, 'Giả định chưa được xác nhận: tỉ lệ số ô bằng nhau, giá trị chỉ số đều nhau theo bước 5, một lần roll không ra trùng dòng, ô ghim Ever Pin tính vào số ô đã bốc.'),
+          el('li', null, 'Ever Pin: thông báo của game chỉ nói ghim được 1 theme và 1 hiệu ứng, Serebii nói thêm 1 chỉ số. Tab này cho ghim cả 3 nhóm; nếu game không cho ghim chỉ số thì đừng dùng ô đó.'),
+          el('li', null, 'Chỉ số và hiệu ứng chỉ có tác dụng khi cặp đồng bộ có Theme Skill trùng một theme của gear.'),
+          el('li', null, 'Serebii ghi pool của lông Purple và Yellow giống hệt nhau, và không có lông Green.')),
+        el('p', { class: 'hint' }, 'Dữ liệu: ', el('a', { href: SG.source, target: '_blank', rel: 'noopener' }, 'Serebii Skill Gears'), `, cập nhật ${SG.fetched}. Số trên tab là mô phỏng, không phải kết quả trong game.`)));
+    renderTarget();
+    refresh();
     return page;
   }
 

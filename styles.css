@@ -1097,3 +1097,30 @@ input.lv[readonly]:focus { outline-color: var(--border-strong); }
 .gear-help { margin-top: 14px; max-width: 960px; box-sizing: border-box; font-size: 13px; }
 .gear-help summary { cursor: pointer; font-weight: 600; }
 .gear-help ul { margin: 10px 0; padding-left: 18px; display: grid; gap: 4px; }
+/* ================================================================ Mô phỏng roll gear */
+.roll-feather { display: grid; gap: 8px; margin-bottom: 8px; }
+.roll-feather + .hint, .roll-effect-note { margin: 8px 0 0; }
+.roll-effect-note:empty { display: none; }
+.roll-wide { grid-column: 1 / -1; }
+.roll-weights { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 10px; }
+.roll-help { margin-top: 0; }
+.roll-help > .hint { margin: 10px 0 0; }
+.roll-odds { font-size: 14px; }
+.roll-odds p { margin: 0 0 8px; }
+.roll-odds-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.roll-odds-list strong { color: var(--text); }
+.roll-odds-box > .hint { margin: 0; }
+.roll-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; }
+.roll-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+.gear-card > .hint:last-child { margin: 0; }
+.roll-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.roll-card-head h2 { margin: 0; }
+.roll-group { margin-top: 10px; }
+.roll-group h3 { margin: 0 0 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.roll-group .hint { margin: 0; }
+.roll-slots { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; }
+.roll-slot { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; padding: 2px 4px 2px 8px; border-radius: var(--radius-sm); background: var(--surface-2); overflow-wrap: anywhere; }
+.roll-slot.locked { background: var(--accent-soft); font-weight: 600; }
+.roll-pin { flex: none; }
+.roll-pin[aria-pressed="true"] { color: var(--accent); }
+.roll-choice { margin-top: 12px; }
