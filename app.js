@@ -3706,6 +3706,9 @@
     if (!SG_FAMILIES.has(family)) SG_FAMILIES.set(family, []);
     SG_FAMILIES.get(family).push(name);
   }
+  const sgPercent = (name) => parseInt(name.match(/(\d+)%$/)[1], 10);
+  /** Hiệu ứng có % cao nhất trong họ của nó. */
+  const SG_BEST = new Set([...SG_FAMILIES.values()].map((names) => names.reduce((a, b) => (sgPercent(b) > sgPercent(a) ? b : a))));
 
   /** Lông đang chọn: `pick` là màu lông thường hoặc id lông Special. */
   const sgFeather = (pick, star) => SG.feathers.find((f) => (f.special ? f.id === pick : f.name === pick && f.star === star))
@@ -3933,7 +3936,7 @@
       const text = cat.key === 'stats' ? `${item.name} +${item.value}` : item;
       const locked = !!cat.lock && cfg.locks[cat.lock] === name;
       return el('li', { class: 'roll-slot' + (locked ? ' locked' : ''), title: cat.key === 'effects' ? sgEffectDesc(name) : null },
-        el('span', null, text),
+        el('span', { class: cat.key === 'effects' && SG_BEST.has(name) ? 'roll-best' : null }, text),
         cat.lock ? el('button', {
           type: 'button',
           class: 'icon-btn plain roll-pin',

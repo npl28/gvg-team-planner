@@ -1117,6 +1117,7 @@ input.lv[readonly]:focus { outline-color: var(--border-strong); }
 .roll-slots { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; }
 .roll-slot { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; padding: 2px 4px 2px 8px; border-radius: var(--radius-sm); background: var(--surface-2); overflow-wrap: anywhere; }
 .roll-slot.locked { background: var(--accent-soft); font-weight: 600; }
+.roll-best { color: var(--bad); font-weight: 600; }
 .roll-pin { flex: none; }
 .roll-pin[aria-pressed="true"] { color: var(--accent); }
 .roll-star { margin-bottom: 8px; }
