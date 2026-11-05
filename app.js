@@ -3891,6 +3891,7 @@
     const isValid = (pick) => SG.feathers.some((f) => (f.special ? f.id === pick : f.name === pick));
     ui.gear.roll = {
       pick: isValid(raw.pick) ? raw.pick : 'Red',
+      view: raw.view === 'rates' ? 'rates' : 'sim',
       gearType: SG_GEARS.includes(raw.gearType) ? raw.gearType : SG_GEARS[0],
       star,
       target: { theme: '', stat: '', min: 0, ...savedTarget, effects: Array.from({ length: SG_LINES }, (_, i) => lineOf(i)) },
@@ -3980,9 +3981,155 @@
         el('li', null, el('strong', null, gearFmt(sgFeathersFor(p, 0.9), 0)), ' lông: 90% đạt')));
   }
 
+  // Bảng tỷ lệ: tính trực tiếp từ dữ liệu game, chưa tính Ever Pin.
+  const SG_COLOR_NOTE = {
+    Red: 'Tăng sát thương chiêu',
+    Pink: 'Tăng sát thương Sync',
+    Blue: 'Giảm sát thương nhận vào',
+    Green: 'Thiên về trạng thái của đối thủ',
+    Purple: 'Thiên về sân, thời tiết, vùng',
+    White: 'Thiên về hệ chiêu',
+    Yellow: 'Mọi hiệu ứng',
+  };
+  const SG_LEVEL_NOTE = { 1: 'Thấp, giữa, cao', 2: 'Giữa, cao', 3: 'Chỉ cao nhất' };
+
+  /** Xác suất gear có ít nhất 1 hiệu ứng % cao nhất. */
+  function sgAnyBestChance(feather) {
+    const names = sgEffects(feather);
+    const best = names.filter((n) => SG_BEST.has(n)).length;
+    return sgCountOdds(feather.effectNum).reduce((sum, p, i) => {
+      let none = 1;
+      for (let k = 0; k <= i; k++) none *= Math.max(names.length - best - k, 0) / (names.length - k);
+      return sum + p * (1 - none);
+    }, 0);
+  }
+
+  const sgTh = (text, num) => el('th', { scope: 'col', class: num ? 'num' : null }, text);
+  const sgNum = (text, cls) => el('td', { class: 'num' + (cls ? ` ${cls}` : '') }, text);
+
+  function sgRatesOverview() {
+    const regular = SG.feathers.filter((f) => !f.special);
+    const colors = [...new Set(regular.map((f) => f.name))];
+    return el('div', { class: 'card gear-card' },
+      el('h2', null, 'Các loại lông'),
+      el('div', { class: 'scroll' }, el('table', { class: 'roll-table' },
+        el('thead', null, el('tr', null, sgTh('Lông'), sgTh('Sao'), sgTh('Ra 1 ô', 1), sgTh('Ra 2 ô', 1), sgTh('Ra 3 ô', 1),
+          sgTh('Mức hiệu ứng'), sgTh('Số hiệu ứng', 1), sgTh('1 hiệu ứng cụ thể', 1), sgTh('Có hiệu ứng % cao nhất', 1), sgTh('Số theme', 1), sgTh('1 theme cụ thể', 1))),
+        colors.map((color) => el('tbody', null, regular.filter((f) => f.name === color).map((f, i) => {
+          const odds = sgCountOdds(f.effectNum);
+          const effects = sgEffects(f).length;
+          const themes = f.themes.length;
+          return el('tr', null,
+            i === 0 ? el('th', { scope: 'rowgroup', rowspan: SG_STARS.length, class: 'roll-color' }, color, el('span', null, SG_COLOR_NOTE[color] || '')) : null,
+            el('td', null, `${f.star}★`),
+            odds.map((p) => sgNum(sgFmtPct(p), p ? '' : 'roll-zero')),
+            el('td', null, SG_LEVEL_NOTE[f.star]),
+            sgNum(effects),
+            sgNum(sgFmtPct(sgSlotChance(odds, 0, effects))),
+            sgNum(sgFmtPct(sgAnyBestChance(f))),
+            sgNum(themes),
+            sgNum(sgFmtPct(sgSlotChance(sgCountOdds(f.themeNum), 0, themes))));
+        }))))),
+      el('p', { class: 'hint' }, `"1 hiệu ứng cụ thể" và "1 theme cụ thể" là tỉ lệ dòng đó xuất hiện trên gear sau một lần dùng lông. Lông Special (${SG.feathers.filter((f) => f.special).length} loại) cho kết quả cố định: đủ 3 theme, 2 chỉ số và 3 hiệu ứng ghi sẵn, tỉ lệ 100%.`));
+  }
+
+  function sgRatesStats() {
+    const regular = SG_STARS.map((star) => SG.feathers.find((f) => !f.special && f.star === star));
+    const special = SG.feathers.find((f) => f.special);
+    return el('div', { class: 'card gear-card' },
+      el('h2', null, 'Chỉ số theo loại gear'),
+      el('div', { class: 'scroll' }, el('table', { class: 'roll-table' },
+        el('thead', null, el('tr', null, sgTh('Gear'), sgTh('Chỉ số'), sgTh('Khoảng'), sgTh('Mỗi giá trị', 1),
+          ...SG_STARS.map((s) => sgTh(`Ra ở ${s}★`, 1)), sgTh('Special', 1))),
+        SG_GEARS.map((gear) => el('tbody', null, sgStatRows(regular[0], gear).map((row, i, rows) => {
+          const fixed = sgStatRows(special, gear).find((r) => r.name === row.name);
+          return el('tr', null,
+            i === 0 ? el('th', { scope: 'rowgroup', rowspan: rows.length }, gear) : null,
+            el('td', { class: row.priority ? 'roll-main' : null }, row.name),
+            el('td', null, `+${row.min} đến +${row.max}`),
+            sgNum(sgFmtPct(1 / sgStatValues(row).length)),
+            regular.map((f) => sgNum(sgFmtPct(row.priority ? 1 : sgSlotChance(sgCountOdds(f.statNum), 1, rows.length - 1)))),
+            sgNum(fixed ? `+${fixed.min}` : '–'));
+        }))))),
+      el('p', { class: 'hint' }, 'Chỉ số in đậm luôn có. Các giá trị cách nhau 5; "Mỗi giá trị" giả định các giá trị có tỉ lệ đều nhau.'));
+  }
+
+  function sgRatesDetail(cfg) {
+    const box = el('div');
+    const filter = { text: '' };
+    const body = el('div');
+
+    const renderBody = () => {
+      const feather = sgFeather(cfg.pick, cfg.star);
+      const names = sgEffects(feather);
+      const odds = sgCountOdds(feather.effectNum);
+      const single = sgSlotChance(odds, 0, names.length);
+      const q = filter.text.trim().toLowerCase();
+      const families = [...SG_FAMILIES]
+        .map(([family, levels]) => [family, levels.filter((n) => names.includes(n))])
+        .filter(([family, levels]) => levels.length && (!q || family.toLowerCase().includes(q)));
+      const themes = sgThemes(feather);
+      body.replaceChildren(...[
+        el('h3', { class: 'roll-lines-title' }, `Theme: ${themes.length} loại, mỗi theme ${sgFmtPct(sgSlotChance(sgCountOdds(feather.themeNum), 0, themes.length))}`),
+        el('p', { class: 'hint roll-theme-list' }, themes.join(', ')),
+        el('h3', { class: 'roll-lines-title' }, `Hiệu ứng: ${names.length} dòng, ${families.length} nhóm đang hiện`),
+        el('div', { class: 'scroll roll-detail' }, el('table', { class: 'roll-table' },
+          el('thead', null, el('tr', null, sgTh('Nhóm hiệu ứng'), sgTh('Mức'), sgTh('Mỗi lần bốc', 1), sgTh('Mỗi mức trên gear', 1), sgTh('Cả nhóm trên gear', 1))),
+          el('tbody', null, families.map(([family, levels]) => el('tr', null,
+            el('td', { title: sgEffectDesc(levels[levels.length - 1]) }, family),
+            el('td', null, levels.map((n, i) => [i ? ', ' : '', el('span', { class: SG_BEST.has(n) ? 'roll-best' : null }, `${sgPercent(n)}%`)])),
+            sgNum(sgFmtPct(1 / names.length)),
+            sgNum(sgFmtPct(single)),
+            sgNum(sgFmtPct(sgEffectChance(feather, { effects: [levels] }, null)))))))),
+        families.length ? null : el('p', { class: 'hint' }, 'Không có nhóm nào khớp.'),
+      ].filter(Boolean));
+    };
+
+    const stars = el('div', { class: 'roll-star' });
+    const renderStars = () => stars.replaceChildren(...(sgFeather(cfg.pick, cfg.star).special ? [] : [
+      segmented('Độ hiếm lông', SG_STARS.map((key) => ({ key, label: `${key}★` })), () => cfg.star, (key) => { cfg.star = key; saveUi(); renderBody(); }),
+    ]));
+    const select = el('select', {
+      class: 'field gear-input', 'aria-label': 'Loại lông',
+      onchange: (e) => { cfg.pick = e.target.value; saveUi(); renderStars(); renderBody(); },
+    });
+    sgFeatherOptions(select, '', cfg.pick);
+    renderStars();
+    renderBody();
+    box.className = 'card gear-card';
+    box.append(
+      el('h2', null, 'Chi tiết từng lông'),
+      el('div', { class: 'roll-detail-controls' }, select, stars,
+        el('input', {
+          class: 'field gear-input', type: 'search', placeholder: 'Lọc nhóm hiệu ứng', 'aria-label': 'Lọc nhóm hiệu ứng',
+          oninput: (e) => { filter.text = e.target.value; renderBody(); },
+        })),
+      body,
+      el('p', { class: 'hint' }, '"Mỗi lần bốc" là tỉ lệ khi bốc 1 ô. "Trên gear" là tỉ lệ có mặt sau một lần dùng lông, đã tính số ô.'));
+    return box;
+  }
+
+  function sgRatesView() {
+    return el('div', { class: 'roll-rates' }, sgRatesOverview(), sgRatesStats(), sgRatesDetail(ui.gear.roll),
+      el('p', { class: 'hint' }, 'Tính từ ', el('a', { href: SG.source, target: '_blank', rel: 'noopener' }, 'dữ liệu game do Pokebip trích xuất'), `, bản ${SG.version}. Chưa tính Ever Pin.`));
+  }
+
   function renderGearRoll() {
     if (!SG) return el('div', { class: 'page-head' }, el('h1', null, 'Mô phỏng roll gear'), el('span', { class: 'page-sub' }, 'Thiếu file skillgears.js.'));
     const cfg = sgConfig();
+    const viewSwitch = segmented('Chế độ xem', [{ key: 'sim', label: 'Mô phỏng' }, { key: 'rates', label: 'Bảng tỷ lệ' }], () => cfg.view, (key) => {
+      cfg.view = key;
+      saveUi();
+      render();
+    });
+    if (cfg.view === 'rates') {
+      return el('div', null,
+        el('div', { class: 'page-head' },
+          el('h1', null, 'Bảng tỷ lệ lông'),
+          el('span', { class: 'page-sub' }, 'Tỉ lệ số ô, hiệu ứng, theme và chỉ số của từng loại Skill Feather.')),
+        el('div', { class: 'toolbar' }, viewSwitch),
+        sgRatesView());
+    }
     const current = () => sgFeather(cfg.pick, cfg.star);
     const targetBox = el('div', { class: 'gear-inputs' });
     const results = el('div', { class: 'gear-results', 'aria-live': 'polite' });
@@ -4120,6 +4267,7 @@
         el('h1', null, 'Mô phỏng roll gear'),
         el('span', { class: 'page-sub' }, 'Thử dùng Skill Feather, ghim Ever Pin và ước tính số lông cần cho một gear.')),
       el('div', { class: 'toolbar' },
+        viewSwitch,
         segmented('Loại gear', SG_GEARS.map((key) => ({ key, label: key })), () => cfg.gearType, (key) => {
           cfg.gearType = key;
           reset();
