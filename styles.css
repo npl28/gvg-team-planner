@@ -1119,7 +1119,6 @@ input.lv[readonly]:focus { outline-color: var(--border-strong); }
 .roll-slot.locked { background: var(--accent-soft); font-weight: 600; }
 .roll-pin { flex: none; }
 .roll-pin[aria-pressed="true"] { color: var(--accent); }
-.roll-choice { margin-top: 12px; }
 .roll-star { margin-bottom: 8px; }
 .roll-star:empty { display: none; }
 .roll-lines-title { margin: 14px 0 2px; font-size: 13px; font-weight: 600; }
@@ -1129,6 +1128,4 @@ input.lv[readonly]:focus { outline-color: var(--border-strong); }
 .roll-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 3px 8px; border: 0; border-radius: 999px; background: var(--accent-soft); color: var(--text); font: inherit; font-size: 12px; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
 .roll-chip .i { flex: none; width: 12px; height: 12px; }
 .roll-chip.missing { background: var(--bad-bg); color: var(--bad); }
-.roll-pin:disabled { opacity: .45; cursor: not-allowed; }
-.roll-pin-mark { flex: none; display: inline-flex; padding: 4px; color: var(--accent); }
 .gear-card .roll-pin-hint { margin: 0 0 4px; }

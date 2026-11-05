@@ -3893,7 +3893,6 @@
       target: { theme: '', stat: '', min: 0, ...savedTarget, effects: Array.from({ length: SG_LINES }, (_, i) => lineOf(i)) },
       locks: { theme: raw.locks?.theme ?? null, effect: raw.locks?.effect ?? null },
       gear: gearOf(raw.gear),
-      pending: raw.pending ? gearOf(raw.pending) : null,
       used: gearNum(raw.used),
     };
     return ui.gear.roll;
@@ -3926,42 +3925,34 @@
   /** Lựa chọn hiện tại không có trong lông đang chọn thì vẫn giữ và ghi chú, để đổi lông không mất mục tiêu. */
   const sgMissing = (value, names) => (value && !names.includes(value) ? [[value, `${value} (lông này không có)`]] : []);
 
-  function sgSlotRows(cfg, gear, cat, lockable, refresh) {
+  function sgSlotRows(cfg, gear, cat, refresh) {
     const items = gear[cat.key];
     if (!items.length) return el('p', { class: 'hint' }, '–');
     return el('ul', { class: 'roll-slots' }, items.map((item) => {
       const name = cat.key === 'stats' ? item.name : item;
       const text = cat.key === 'stats' ? `${item.name} +${item.value}` : item;
       const locked = !!cat.lock && cfg.locks[cat.lock] === name;
-      const waiting = !!cfg.pending; // kết quả mới đã bốc xong, đổi ghim lúc này sẽ không còn đúng
-      let pin = null;
-      if (lockable && cat.lock) {
-        pin = el('button', {
+      return el('li', { class: 'roll-slot' + (locked ? ' locked' : ''), title: cat.key === 'effects' ? sgEffectDesc(name) : null },
+        el('span', null, text),
+        cat.lock ? el('button', {
           type: 'button',
           class: 'icon-btn plain roll-pin',
-          disabled: waiting,
-          title: waiting ? 'Chọn giữ gear cũ hoặc lấy kết quả mới trước khi đổi ghim'
-            : (locked ? 'Bỏ ghim Ever Pin' : `Ghim Ever Pin: dòng này luôn giữ nguyên khi roll lại (mỗi gear 1 dòng ${cat.label.toLowerCase()})`),
+          title: locked ? 'Bỏ ghim Ever Pin' : `Ghim Ever Pin: dòng này luôn giữ nguyên khi roll lại (mỗi gear 1 dòng ${cat.label.toLowerCase()})`,
           'aria-label': `${locked ? 'Bỏ ghim' : 'Ghim'} ${text}`,
           'aria-pressed': String(locked),
           onclick: () => { cfg.locks[cat.lock] = locked ? null : name; saveUi(); refresh(); },
-        }, ic('pin'));
-      } else if (locked) {
-        pin = el('span', { class: 'roll-pin-mark', title: 'Dòng đã ghim Ever Pin', role: 'img', 'aria-label': 'Đã ghim' }, ic('pin'));
-      }
-      return el('li', { class: 'roll-slot' + (locked ? ' locked' : ''), title: cat.key === 'effects' ? sgEffectDesc(name) : null },
-        el('span', null, text), pin);
+        }, ic('pin')) : null);
     }));
   }
 
-  function sgGearCard(cfg, gear, title, lockable, refresh, extra) {
-    const met = sgHasTarget(cfg.target) && !sgIsEmpty(gear) && sgMeets(gear, cfg.target);
+  function sgGearCard(cfg, refresh) {
+    const { gear } = cfg;
+    const met = sgHasTarget(cfg.target) && sgMeets(gear, cfg.target);
     return el('div', { class: 'card gear-card' },
-      el('div', { class: 'roll-card-head' }, el('h2', null, title),
+      el('div', { class: 'roll-card-head' }, el('h2', null, 'Gear hiện tại'),
         met ? el('span', { class: 'gear-tag gear-a' }, 'Đạt mục tiêu') : null),
-      lockable ? el('p', { class: 'hint roll-pin-hint' }, 'Ever Pin: ghim 1 dòng theme, 1 dòng hiệu ứng, hoặc cả hai. Dòng đã ghim luôn giữ nguyên khi roll lại.') : null,
-      SG_CATS.map((cat) => el('div', { class: 'roll-group' }, el('h3', null, cat.label), sgSlotRows(cfg, gear, cat, lockable, refresh))),
-      extra);
+      el('p', { class: 'hint roll-pin-hint' }, 'Ever Pin: ghim 1 dòng theme, 1 dòng hiệu ứng, hoặc cả hai. Dòng đã ghim luôn giữ nguyên khi roll lại.'),
+      SG_CATS.map((cat) => el('div', { class: 'roll-group' }, el('h3', null, cat.label), sgSlotRows(cfg, gear, cat, refresh))));
   }
 
   function sgChanceCard(cfg) {
@@ -3998,23 +3989,9 @@
     const starBox = el('div', { class: 'roll-star' });
     const refreshOdds = () => oddsBox.replaceChildren(sgChanceCard(cfg));
 
-    /** Ghim chỉ còn hiệu lực khi ô đó vẫn nằm trên gear. */
-    const dropStaleLocks = () => {
-      if (!cfg.gear.themes.includes(cfg.locks.theme)) cfg.locks.theme = null;
-      if (!cfg.gear.effects.includes(cfg.locks.effect)) cfg.locks.effect = null;
-    };
     const roll = () => {
-      const next = sgRoll(current(), cfg.gearType, cfg.gear, cfg.locks);
+      cfg.gear = sgRoll(current(), cfg.gearType, cfg.gear, cfg.locks);
       cfg.used += 1;
-      if (sgIsEmpty(cfg.gear)) cfg.gear = next;
-      else cfg.pending = next;
-      saveUi();
-      refresh();
-    };
-    const choose = (takeNew) => {
-      if (takeNew) cfg.gear = cfg.pending;
-      cfg.pending = null;
-      dropStaleLocks();
       saveUi();
       refresh();
     };
@@ -4026,41 +4003,35 @@
       if (1 / chance > SG_MAX_AUTO) { toast(`Mục tiêu quá hiếm: trung bình cần ${gearFmt(Math.ceil(1 / chance), 0)} lông.`, 'error'); return; }
       const feather = current();
       let done = 0;
-      let hit = null;
+      let hit = false;
       while (done < SG_MAX_AUTO && !hit) {
-        const next = sgRoll(feather, cfg.gearType, cfg.gear, cfg.locks);
+        cfg.gear = sgRoll(feather, cfg.gearType, cfg.gear, cfg.locks);
         done += 1;
-        if (sgMeets(next, cfg.target)) hit = next;
+        hit = sgMeets(cfg.gear, cfg.target);
       }
       cfg.used += done;
-      if (hit) cfg.gear = hit;
-      toast(hit ? `Đạt mục tiêu sau ${gearFmt(done, 0)} lông.` : `Chưa đạt sau ${gearFmt(done, 0)} lông, giữ nguyên gear.`, hit ? 'ok' : 'error');
+      toast(hit ? `Đạt mục tiêu sau ${gearFmt(done, 0)} lông.` : `Chưa đạt sau ${gearFmt(done, 0)} lông.`, hit ? 'ok' : 'error');
       saveUi();
       refresh();
     };
     const reset = () => {
-      Object.assign(cfg, { gear: sgEmptyGear(), pending: null, used: 0, locks: sgEmptyLocks() });
+      Object.assign(cfg, { gear: sgEmptyGear(), used: 0, locks: sgEmptyLocks() });
       saveUi();
       refresh();
     };
 
     function refresh() {
-      const pending = !!cfg.pending;
-      results.replaceChildren(...[
+      results.replaceChildren(
         el('div', { class: 'card gear-card' },
           oddsBox,
           el('div', { class: 'roll-actions' },
-            el('button', { type: 'button', class: 'btn btn-primary', disabled: pending, title: pending ? 'Chọn giữ gear cũ hoặc lấy kết quả mới trước' : null, onclick: roll }, ic('dice'), 'Dùng 1 lông'),
-            el('button', { type: 'button', class: 'btn', disabled: pending, title: pending ? 'Chọn giữ gear cũ hoặc lấy kết quả mới trước' : null, onclick: rollUntil }, 'Roll đến khi đạt'),
+            el('button', { type: 'button', class: 'btn btn-primary', onclick: roll }, ic('dice'), 'Dùng 1 lông'),
+            el('button', { type: 'button', class: 'btn', onclick: rollUntil }, 'Roll đến khi đạt'),
             el('button', { type: 'button', class: 'btn btn-ghost', onclick: reset }, 'Làm lại từ đầu')),
           el('p', { class: 'hint' }, `Đã dùng ${gearFmt(cfg.used, 0)} lông cho gear này.`)),
-        pending ? sgGearCard(cfg, cfg.pending, 'Kết quả mới', false, refresh, el('div', { class: 'btn-row roll-choice' },
-          el('button', { type: 'button', class: 'btn btn-primary', onclick: () => choose(true) }, 'Lấy kết quả mới'),
-          el('button', { type: 'button', class: 'btn', onclick: () => choose(false) }, 'Giữ gear cũ'))) : null,
         sgIsEmpty(cfg.gear)
           ? el('div', { class: 'card gear-card' }, el('h2', null, 'Gear hiện tại'), el('p', { class: 'hint' }, 'Gear chưa mở khóa. Bấm "Dùng 1 lông" để bắt đầu.'))
-          : sgGearCard(cfg, cfg.gear, 'Gear hiện tại', true, refresh),
-      ].filter(Boolean));
+          : sgGearCard(cfg, refresh));
       refreshOdds();
     }
 
