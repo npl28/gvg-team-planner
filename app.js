@@ -3757,9 +3757,14 @@
     return values[Math.floor(Math.random() * values.length)];
   };
 
-  function sgRollNames(names, locked, numLot) {
-    const kept = locked ? [locked] : [];
-    return [...kept, ...sgDraw(names.filter((n) => n !== locked), sgDrawCount(sgCountOdds(numLot)) - kept.length)];
+  /** Bốc lại một nhóm; dòng đã ghim giữ nguyên nội dung và vị trí, và tính vào số ô. */
+  function sgRollNames(names, current, lockName, numLot) {
+    const count = sgDrawCount(sgCountOdds(numLot));
+    const index = current.indexOf(lockName);
+    if (index < 0) return sgDraw(names, count);
+    const drawn = sgDraw(names.filter((n) => n !== lockName), count - 1);
+    drawn.splice(Math.min(index, drawn.length), 0, lockName);
+    return drawn;
   }
 
   /** Một lần dùng lông: mỗi nhóm tự bốc số ô; chỉ số ưu tiên luôn có, ô đã ghim Ever Pin giữ nguyên và tính vào số ô. */
@@ -3769,9 +3774,9 @@
     const rest = rows.filter((r) => !r.priority);
     const extra = sgDraw(rest, sgDrawCount(sgCountOdds(feather.statNum)) - priority.length);
     return {
-      themes: sgRollNames(sgThemes(feather), gear.themes.includes(locks.theme) ? locks.theme : null, feather.themeNum),
+      themes: sgRollNames(sgThemes(feather), gear.themes, locks.theme, feather.themeNum),
       stats: [...priority, ...extra].map((r) => ({ name: r.name, value: sgStatValue(r) })),
-      effects: sgRollNames(sgEffects(feather), gear.effects.includes(locks.effect) ? locks.effect : null, feather.effectNum),
+      effects: sgRollNames(sgEffects(feather), gear.effects, locks.effect, feather.effectNum),
     };
   }
 
@@ -3927,18 +3932,25 @@
     return el('ul', { class: 'roll-slots' }, items.map((item) => {
       const name = cat.key === 'stats' ? item.name : item;
       const text = cat.key === 'stats' ? `${item.name} +${item.value}` : item;
-      const canPin = lockable && cat.lock;
-      const locked = canPin && cfg.locks[cat.lock] === name;
-      return el('li', { class: 'roll-slot' + (locked ? ' locked' : ''), title: cat.key === 'effects' ? sgEffectDesc(name) : null },
-        el('span', null, text),
-        canPin ? el('button', {
+      const locked = !!cat.lock && cfg.locks[cat.lock] === name;
+      const waiting = !!cfg.pending; // kết quả mới đã bốc xong, đổi ghim lúc này sẽ không còn đúng
+      let pin = null;
+      if (lockable && cat.lock) {
+        pin = el('button', {
           type: 'button',
           class: 'icon-btn plain roll-pin',
-          title: locked ? 'Bỏ ghim Ever Pin' : 'Ghim Ever Pin: giữ ô này khi roll lại',
+          disabled: waiting,
+          title: waiting ? 'Chọn giữ gear cũ hoặc lấy kết quả mới trước khi đổi ghim'
+            : (locked ? 'Bỏ ghim Ever Pin' : `Ghim Ever Pin: dòng này luôn giữ nguyên khi roll lại (mỗi gear 1 dòng ${cat.label.toLowerCase()})`),
           'aria-label': `${locked ? 'Bỏ ghim' : 'Ghim'} ${text}`,
-          'aria-pressed': String(!!locked),
+          'aria-pressed': String(locked),
           onclick: () => { cfg.locks[cat.lock] = locked ? null : name; saveUi(); refresh(); },
-        }, ic('pin')) : null);
+        }, ic('pin'));
+      } else if (locked) {
+        pin = el('span', { class: 'roll-pin-mark', title: 'Dòng đã ghim Ever Pin', role: 'img', 'aria-label': 'Đã ghim' }, ic('pin'));
+      }
+      return el('li', { class: 'roll-slot' + (locked ? ' locked' : ''), title: cat.key === 'effects' ? sgEffectDesc(name) : null },
+        el('span', null, text), pin);
     }));
   }
 
@@ -3947,6 +3959,7 @@
     return el('div', { class: 'card gear-card' },
       el('div', { class: 'roll-card-head' }, el('h2', null, title),
         met ? el('span', { class: 'gear-tag gear-a' }, 'Đạt mục tiêu') : null),
+      lockable ? el('p', { class: 'hint roll-pin-hint' }, 'Ever Pin: ghim 1 dòng theme, 1 dòng hiệu ứng, hoặc cả hai. Dòng đã ghim luôn giữ nguyên khi roll lại.') : null,
       SG_CATS.map((cat) => el('div', { class: 'roll-group' }, el('h3', null, cat.label), sgSlotRows(cfg, gear, cat, lockable, refresh))),
       extra);
   }
@@ -4159,7 +4172,7 @@
           el('li', null, 'Danh sách theme, hiệu ứng, số ô, khoảng và bước chỉ số lấy từ dữ liệu game; hiệu ứng và theme trong một lông có tỉ lệ đều nhau.'),
           el('li', null, 'Lông càng nhiều sao càng dễ ra hiệu ứng tốt vì pool bị bỏ bớt mức thấp và có nhiều ô hơn. 2★ chỉ còn mức giữa và cao, 3★ chỉ còn mức cao nhất.'),
           el('li', null, 'Bracelet luôn có Attack, Bandanna luôn có Sp. Attack, Pin luôn có HP.'),
-          el('li', null, 'Ever Pin ghim được 1 theme và 1 hiệu ứng, không ghim được chỉ số (theo mô tả vật phẩm trong game).'),
+          el('li', null, 'Mỗi gear ghim được 1 dòng theme, 1 dòng hiệu ứng, hoặc cả hai; dòng đã ghim luôn giữ nguyên khi roll lại. Không ghim được chỉ số (theo mô tả vật phẩm trong game).'),
           el('li', null, 'Giả định chưa được xác nhận: giá trị chỉ số đều nhau trong khoảng, một lần roll không ra trùng dòng, ô ghim Ever Pin tính vào số ô đã bốc.'),
           el('li', null, 'Chỉ số và hiệu ứng chỉ có tác dụng khi cặp đồng bộ có Theme Skill trùng một theme của gear.')),
         el('p', { class: 'hint' }, 'Dữ liệu: ', el('a', { href: SG.source, target: '_blank', rel: 'noopener' }, 'dữ liệu game do Pokebip trích xuất'), `, bản ${SG.version}, lấy ngày ${SG.fetched}. Số trên tab là mô phỏng, không phải kết quả trong game.`)));
