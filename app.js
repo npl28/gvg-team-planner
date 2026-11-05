@@ -3681,44 +3681,42 @@
   }
 
   // ---------------------------------------------------------------- Mô phỏng roll gear
-  // Dữ liệu trong skillgears.js (tools/skillgears_to_js.py lấy từ Serebii).
+  // Dữ liệu game trong skillgears.js (tools/skillgears_to_js.py): danh sách, số ô và khoảng chỉ số.
   const SG = window.SKILL_GEAR || null;
   const SG_GEARS = ['Bracelet', 'Bandanna', 'Pin'];
-  const SG_MAIN_STAT = { Bracelet: 'Attack', Bandanna: 'Sp. Attack', Pin: 'HP' }; // stat luôn có theo loại gear
-  const SG_SLOTS = 3; // tối đa 3 ô mỗi nhóm
+  const SG_STARS = [1, 2, 3];
   const SG_STAT_STEP = 5;
   const SG_MAX_AUTO = 200000; // giới hạn số lông cho một lần "Roll đến khi đạt"
   const SG_LINES = 3; // tối đa 3 dòng hiệu ứng mục tiêu, mỗi dòng chấp nhận nhiều loại
-  const SG_STARS = [1, 2];
-  // Chưa có bảng tỉ lệ 2★ công khai: số của 2★ chỉ là giả định tạm, người dùng tự chỉnh.
-  const SG_DEFAULT_RATES = { 1: { slots: [1, 1, 1], tiers: [1, 1, 1] }, 2: { slots: [1, 1, 1], tiers: [1, 2, 3] } };
   const SG_ALL_LEVELS = ' (mọi mức)';
-  // Mỗi họ hiệu ứng (vd. "Crit: Moves Up") có 3 mức %: tier 0 thấp, 1 giữa, 2 cao.
+  const SG_STAR_NOTE = {
+    1: 'Đủ 3 mức hiệu ứng, ra 1 đến 3 ô.',
+    2: 'Bỏ mức thấp nhất, chỉ còn mức giữa và cao, ra 2 hoặc 3 ô.',
+    3: 'Chỉ còn mức cao nhất, luôn đủ 3 ô.',
+  };
+  const SG_CATS = [
+    { key: 'themes', lock: 'theme', label: 'Theme' },
+    { key: 'stats', lock: null, label: 'Chỉ số' }, // Ever Pin chỉ ghim được theme và hiệu ứng
+    { key: 'effects', lock: 'effect', label: 'Hiệu ứng' },
+  ];
+  // Mỗi họ hiệu ứng (vd. "Crit: Moves ↑") gồm các mức %.
   const SG_FAMILIES = new Map();
-  const SG_TIER = new Map();
   for (const [name] of SG ? SG.effects : []) {
     const family = name.replace(/\s*\d+%$/, '');
     if (!SG_FAMILIES.has(family)) SG_FAMILIES.set(family, []);
     SG_FAMILIES.get(family).push(name);
   }
-  for (const names of SG_FAMILIES.values()) {
-    names.sort((a, b) => parseInt(a.match(/(\d+)%$/)[1], 10) - parseInt(b.match(/(\d+)%$/)[1], 10));
-    names.forEach((name, i) => SG_TIER.set(name, names.length > 1 ? Math.round(i * 2 / (names.length - 1)) : 2));
-  }
-  const SG_CATS = [
-    { key: 'themes', lock: 'theme', label: 'Theme' },
-    { key: 'stats', lock: 'stat', label: 'Chỉ số' },
-    { key: 'effects', lock: 'effect', label: 'Hiệu ứng' },
-  ];
 
-  const sgFeather = (id) => SG.feathers.find((f) => f.id === id) || SG.feathers[0];
-  const sgStatRows = (feather, gearType) => SG.stats[feather.special ? 'special' : 'regular'][gearType]
-    .map(([name, min, max]) => ({ name, min, max }));
+  /** Lông đang chọn: `pick` là màu lông thường hoặc id lông Special. */
+  const sgFeather = (pick, star) => SG.feathers.find((f) => (f.special ? f.id === pick : f.name === pick && f.star === star))
+    || SG.feathers.find((f) => !f.special && f.star === star) || SG.feathers[0];
+  const sgStatRows = (feather, gearType) => SG.stats[feather.statParam][gearType]
+    .map(([name, min, max, priority]) => ({ name, min, max, priority }));
   const sgThemes = (feather) => feather.themes.map((i) => SG.themes[i]);
   const sgEffects = (feather) => (feather.effectNames ||= feather.effects.map((i) => SG.effects[i][0]));
   const sgEffectDesc = (name) => (SG.effects.find((e) => e[0] === name) || [])[1] || '';
   const sgEmptyGear = () => ({ themes: [], stats: [], effects: [] });
-  const sgEmptyLocks = () => ({ theme: null, stat: null, effect: null });
+  const sgEmptyLocks = () => ({ theme: null, effect: null });
   const sgIsEmpty = (gear) => !gear.themes.length && !gear.stats.length && !gear.effects.length;
 
   function sgStatValues({ min, max }) {
@@ -3727,23 +3725,20 @@
     return out;
   }
 
-  const sgNormalize = (weights) => {
-    const w = [0, 1, 2].map((i) => gearNum(weights[i]));
-    const sum = w.reduce((a, b) => a + b, 0);
-    return sum ? w.map((x) => x / sum) : [1 / 3, 1 / 3, 1 / 3];
-  };
-  /** Xác suất ra 1/2/3 ô; Special luôn đủ 3 ô. */
-  const sgCountOdds = (feather, rates) => (feather.special ? [0, 0, 1] : sgNormalize(rates.slots));
-  /** Trọng số theo mức hiệu ứng; Special không phân mức. */
-  const sgTierWeights = (feather, rates) => (feather.special ? [1, 1, 1] : sgNormalize(rates.tiers));
+  /** Xác suất ra 1/2/3 ô theo bảng số ô của game. */
+  function sgCountOdds(numLot) {
+    const weights = SG.numbers[numLot];
+    const sum = weights.reduce((a, b) => a + b, 0);
+    return weights.map((w) => w / sum);
+  }
 
   function sgDrawCount(odds) {
     let r = Math.random();
-    for (let i = 0; i < SG_SLOTS; i++) {
+    for (let i = 0; i < odds.length; i++) {
       r -= odds[i];
       if (r < 0) return i + 1;
     }
-    return SG_SLOTS;
+    return odds.length;
   }
 
   /** Bốc không lặp tối đa `n` phần tử. */
@@ -3757,54 +3752,26 @@
     return pool.slice(0, count);
   }
 
-  /** Bốc không lặp theo trọng số mức hiệu ứng; dòng có trọng số 0 không bao giờ ra. */
-  function sgDrawEffects(names, tiers, n) {
-    const pool = names.slice();
-    const weights = pool.map((name) => tiers[SG_TIER.get(name)]);
-    const out = [];
-    for (let k = 0; k < n && pool.length; k++) {
-      const total = weights.reduce((a, b) => a + b, 0);
-      if (!total) break;
-      let r = Math.random() * total;
-      let i = 0;
-      while (i < pool.length - 1 && r >= weights[i]) r -= weights[i++];
-      if (!weights[i]) i = weights.findIndex((w) => w > 0);
-      out.push(pool[i]);
-      pool[i] = pool[pool.length - 1];
-      weights[i] = weights[weights.length - 1];
-      pool.pop();
-      weights.pop();
-    }
-    return out;
-  }
-
   const sgStatValue = (row) => {
     const values = sgStatValues(row);
     return values[Math.floor(Math.random() * values.length)];
   };
 
-  function sgRollNames(names, locked, odds) {
+  function sgRollNames(names, locked, numLot) {
     const kept = locked ? [locked] : [];
-    return [...kept, ...sgDraw(names.filter((n) => n !== locked), sgDrawCount(odds) - kept.length)];
+    return [...kept, ...sgDraw(names.filter((n) => n !== locked), sgDrawCount(sgCountOdds(numLot)) - kept.length)];
   }
 
-  /** Một lần dùng lông: mỗi nhóm tự bốc số ô, ô đã ghim Ever Pin giữ nguyên và tính vào số ô. */
-  function sgRoll(feather, gearType, gear, locks, rates) {
-    const odds = sgCountOdds(feather, rates);
+  /** Một lần dùng lông: mỗi nhóm tự bốc số ô; chỉ số ưu tiên luôn có, ô đã ghim Ever Pin giữ nguyên và tính vào số ô. */
+  function sgRoll(feather, gearType, gear, locks) {
     const rows = sgStatRows(feather, gearType);
-    const main = SG_MAIN_STAT[gearType];
-    const lockedStat = gear.stats.find((s) => s.name === locks.stat);
-    const kept = lockedStat ? [lockedStat] : [];
-    const mainRow = rows.find((r) => r.name === main);
-    if (mainRow && lockedStat?.name !== main) kept.push({ name: main, value: sgStatValue(mainRow) });
-    const rest = rows.filter((r) => !kept.some((s) => s.name === r.name));
-    const lockedEffect = gear.effects.includes(locks.effect) ? locks.effect : null;
-    const keptEffects = lockedEffect ? [lockedEffect] : [];
+    const priority = rows.filter((r) => r.priority);
+    const rest = rows.filter((r) => !r.priority);
+    const extra = sgDraw(rest, sgDrawCount(sgCountOdds(feather.statNum)) - priority.length);
     return {
-      themes: sgRollNames(sgThemes(feather), gear.themes.includes(locks.theme) ? locks.theme : null, odds),
-      effects: [...keptEffects, ...sgDrawEffects(sgEffects(feather).filter((n) => n !== lockedEffect),
-        sgTierWeights(feather, rates), sgDrawCount(odds) - keptEffects.length)],
-      stats: [...kept, ...sgDraw(rest, sgDrawCount(odds) - kept.length).map((r) => ({ name: r.name, value: sgStatValue(r) }))],
+      themes: sgRollNames(sgThemes(feather), gear.themes.includes(locks.theme) ? locks.theme : null, feather.themeNum),
+      stats: [...priority, ...extra].map((r) => ({ name: r.name, value: sgStatValue(r) })),
+      effects: sgRollNames(sgEffects(feather), gear.effects.includes(locks.effect) ? locks.effect : null, feather.effectNum),
     };
   }
 
@@ -3839,65 +3806,55 @@
       : sgSlotChance(odds, 0, names.length);
   }
 
-  function sgStatChance(rows, gearType, gear, locks, target, odds) {
+  function sgStatChance(feather, gearType, target) {
     if (!target.stat) return 1;
-    const min = gearNum(target.min);
-    const locked = gear.stats.find((s) => s.name === locks.stat);
-    if (locked?.name === target.stat) return locked.value >= min ? 1 : 0;
+    const rows = sgStatRows(feather, gearType);
     const row = rows.find((r) => r.name === target.stat);
     if (!row) return 0;
     const values = sgStatValues(row);
-    const valueChance = values.filter((v) => v >= min).length / values.length;
-    const main = SG_MAIN_STAT[gearType];
-    if (target.stat === main) return valueChance;
-    const keptNames = new Set([main, ...(locked ? [locked.name] : [])]);
-    return valueChance * sgSlotChance(odds, keptNames.size, rows.filter((r) => !keptNames.has(r.name)).length);
+    const valueChance = values.filter((v) => v >= gearNum(target.min)).length / values.length;
+    if (row.priority) return valueChance;
+    const kept = rows.filter((r) => r.priority).length;
+    return valueChance * sgSlotChance(sgCountOdds(feather.statNum), kept, rows.length - kept);
   }
 
-  /** Xác suất chính xác cho các dòng hiệu ứng: gom pool theo (dòng phù hợp, mức) rồi duyệt tối đa 3 lần bốc. */
-  function sgEffectChance(feather, target, locked, rates) {
+  /** Xác suất chính xác cho các dòng hiệu ứng: gom pool theo các dòng phù hợp rồi duyệt tối đa 3 lần bốc. */
+  function sgEffectChance(feather, target, locked) {
     const lines = sgActiveLines(target);
     if (!lines.length) return 1;
-    const tiers = sgTierWeights(feather, rates);
-    const classes = new Map();
+    const groups = new Map();
     for (const name of sgEffects(feather)) {
       if (name === locked) continue;
       const mask = sgLineMask(name, lines);
-      const tier = SG_TIER.get(name);
-      const key = `${mask}|${tier}`;
-      if (!classes.has(key)) classes.set(key, { mask, weight: tiers[tier], count: 0 });
-      classes.get(key).count += 1;
+      groups.set(mask, (groups.get(mask) || 0) + 1);
     }
-    const list = [...classes.values()];
+    const list = [...groups].map(([mask, count]) => ({ mask, count }));
     const walk = (free, masks) => {
       if (sgLinesMet(masks, lines.length)) return 1;
       if (!free) return 0;
-      const total = list.reduce((sum, c) => sum + c.count * c.weight, 0);
-      if (!total) return 0;
+      const total = list.reduce((sum, g) => sum + g.count, 0);
       let chance = 0;
-      for (const c of list) {
-        if (!c.count || !c.weight) continue;
-        const pick = c.count * c.weight / total;
-        c.count -= 1;
-        chance += pick * walk(free - 1, [...masks, c.mask]);
-        c.count += 1;
+      for (const g of list) {
+        if (!g.count) continue;
+        const pick = g.count / total;
+        g.count -= 1;
+        chance += pick * walk(free - 1, [...masks, g.mask]);
+        g.count += 1;
       }
       return chance;
     };
     const start = locked ? [sgLineMask(locked, lines)] : [];
-    return sgCountOdds(feather, rates).reduce((sum, p, i) => sum + (p ? p * walk(Math.max(i + 1 - start.length, 0), start) : 0), 0);
+    return sgCountOdds(feather.effectNum).reduce((sum, p, i) => sum + (p ? p * walk(Math.max(i + 1 - start.length, 0), start) : 0), 0);
   }
 
   /** Xác suất đạt mục tiêu trong một lần roll (3 nhóm bốc độc lập). */
   function sgChance(cfg) {
-    const feather = sgFeather(cfg.feather);
-    const rates = cfg.rates[cfg.star];
-    const odds = sgCountOdds(feather, rates);
+    const feather = sgFeather(cfg.pick, cfg.star);
     const lockOf = (list, name) => (list.includes(name) ? name : null);
     return {
-      theme: sgNameChance(sgThemes(feather), cfg.target.theme, lockOf(cfg.gear.themes, cfg.locks.theme), odds),
-      stat: sgStatChance(sgStatRows(feather, cfg.gearType), cfg.gearType, cfg.gear, cfg.locks, cfg.target, odds),
-      effect: sgEffectChance(feather, cfg.target, lockOf(cfg.gear.effects, cfg.locks.effect), rates),
+      theme: sgNameChance(sgThemes(feather), cfg.target.theme, lockOf(cfg.gear.themes, cfg.locks.theme), sgCountOdds(feather.themeNum)),
+      stat: sgStatChance(feather, cfg.gearType, cfg.target),
+      effect: sgEffectChance(feather, cfg.target, lockOf(cfg.gear.effects, cfg.locks.effect)),
     };
   }
 
@@ -3916,25 +3873,20 @@
       stats: Array.isArray(g?.stats) ? g.stats : [],
       effects: Array.isArray(g?.effects) ? g.effects : [],
     });
-    const triple = (v, fallback) => (Array.isArray(v) && v.length === SG_SLOTS ? v : [...fallback]);
     const lineOf = (i) => {
       const saved = raw.target?.effects?.[i];
-      if (Array.isArray(saved)) return saved.filter((n) => typeof n === 'string');
-      return i === 0 && raw.target?.effect ? [raw.target.effect] : []; // bản cũ chỉ có 1 hiệu ứng
+      const names = Array.isArray(saved) ? saved : (i === 0 && raw.target?.effect ? [raw.target.effect] : []); // bản cũ chỉ có 1 hiệu ứng
+      return names.filter((n) => typeof n === 'string').map((n) => n.replace(/ Up (\d+%)$/, ' ↑ $1')); // bản cũ ghi "Up"
     };
     const { effect: _oldEffect, ...savedTarget } = raw.target || {};
-    const rateOf = (star) => ({
-      // bản cũ lưu tỉ lệ số ô ở raw.weights
-      slots: triple(raw.rates?.[star]?.slots ?? (star === 1 ? raw.weights : null), SG_DEFAULT_RATES[star].slots),
-      tiers: triple(raw.rates?.[star]?.tiers, SG_DEFAULT_RATES[star].tiers),
-    });
+    const star = SG_STARS.includes(raw.star) ? raw.star : 1;
+    const isValid = (pick) => SG.feathers.some((f) => (f.special ? f.id === pick : f.name === pick));
     ui.gear.roll = {
-      feather: sgFeather(raw.feather).id,
+      pick: isValid(raw.pick) ? raw.pick : 'Red',
       gearType: SG_GEARS.includes(raw.gearType) ? raw.gearType : SG_GEARS[0],
-      star: SG_STARS.includes(raw.star) ? raw.star : 1,
-      rates: { 1: rateOf(1), 2: rateOf(2) },
+      star,
       target: { theme: '', stat: '', min: 0, ...savedTarget, effects: Array.from({ length: SG_LINES }, (_, i) => lineOf(i)) },
-      locks: { ...sgEmptyLocks(), ...raw.locks },
+      locks: { theme: raw.locks?.theme ?? null, effect: raw.locks?.effect ?? null },
       gear: gearOf(raw.gear),
       pending: raw.pending ? gearOf(raw.pending) : null,
       used: gearNum(raw.used),
@@ -3942,19 +3894,21 @@
     return ui.gear.roll;
   }
 
-  function sgFeatherOptions(select, filter, selectedId) {
+  function sgFeatherOptions(select, filter, selected) {
     const q = filter.trim().toLowerCase();
     const label = (f) => (f.special ? `${f.name} · ${sgThemes(f).join(', ')}` : f.name);
-    const hit = (f) => f.id === selectedId || !q
-      || label(f).toLowerCase().includes(q) || (f.special && sgEffects(f).some((n) => n.toLowerCase().includes(q)));
-    const group = (title, list) => (list.length
-      ? el('optgroup', { label: title }, list.map((f) => el('option', { value: f.id, selected: f.id === selectedId }, label(f))))
+    const hit = (f) => f.id === selected || !q
+      || label(f).toLowerCase().includes(q) || sgEffects(f).some((n) => n.toLowerCase().includes(q));
+    const regular = SG.feathers.filter((f) => !f.special && f.star === 1);
+    const shown = (f) => (f.special ? f.id === selected || hit(f) : f.name === selected || !q || f.name.toLowerCase().includes(q));
+    const group = (title, list, valueOf) => (list.length
+      ? el('optgroup', { label: title }, list.map((f) => el('option', { value: valueOf(f), selected: valueOf(f) === selected }, label(f))))
       : null);
     select.replaceChildren(...[
-      group('Lông thường', SG.feathers.filter((f) => !f.special && hit(f))),
-      group('Lông Special', SG.feathers.filter((f) => f.special && hit(f))),
+      group('Lông thường', regular.filter(shown), (f) => f.name),
+      group('Lông Special', SG.feathers.filter((f) => f.special && shown(f)), (f) => f.id),
     ].filter(Boolean));
-    select.value = selectedId;
+    select.value = selected;
   }
 
   function sgSelect(label, value, options, onChange) {
@@ -3973,10 +3927,11 @@
     return el('ul', { class: 'roll-slots' }, items.map((item) => {
       const name = cat.key === 'stats' ? item.name : item;
       const text = cat.key === 'stats' ? `${item.name} +${item.value}` : item;
-      const locked = lockable && cfg.locks[cat.lock] === name;
+      const canPin = lockable && cat.lock;
+      const locked = canPin && cfg.locks[cat.lock] === name;
       return el('li', { class: 'roll-slot' + (locked ? ' locked' : ''), title: cat.key === 'effects' ? sgEffectDesc(name) : null },
         el('span', null, text),
-        lockable ? el('button', {
+        canPin ? el('button', {
           type: 'button',
           class: 'icon-btn plain roll-pin',
           title: locked ? 'Bỏ ghim Ever Pin' : 'Ghim Ever Pin: giữ ô này khi roll lại',
@@ -4011,8 +3966,6 @@
         'Mục tiêu này không thể đạt với lông và Ever Pin đang chọn. ', parts.join(' · '));
     }
     return el('div', { class: 'roll-odds' },
-      cfg.star === 2 && !sgFeather(cfg.feather).special
-        ? el('p', { class: 'roll-assume' }, 'Lông 2★: số dưới đây dùng tỉ lệ giả định, chưa có bảng tỉ lệ công khai.') : null,
       el('p', null, 'Mỗi lông: ', el('strong', null, sgFmtPct(p)), ` (${parts.join(' · ')})`),
       el('ul', { class: 'roll-odds-list' },
         el('li', null, el('strong', null, gearFmt(Math.ceil(1 / p), 0)), ' lông trung bình'),
@@ -4023,12 +3976,12 @@
   function renderGearRoll() {
     if (!SG) return el('div', { class: 'page-head' }, el('h1', null, 'Mô phỏng roll gear'), el('span', { class: 'page-sub' }, 'Thiếu file skillgears.js.'));
     const cfg = sgConfig();
+    const current = () => sgFeather(cfg.pick, cfg.star);
     const targetBox = el('div', { class: 'gear-inputs' });
     const results = el('div', { class: 'gear-results', 'aria-live': 'polite' });
     const oddsBox = el('div', { class: 'roll-odds-box' });
     const poolNote = el('p', { class: 'hint' });
     const effectNote = el('p', { class: 'hint roll-effect-note' });
-    const ratesBox = el('div');
     const starBox = el('div', { class: 'roll-star' });
     const refreshOdds = () => oddsBox.replaceChildren(sgChanceCard(cfg));
 
@@ -4036,10 +3989,9 @@
     const dropStaleLocks = () => {
       if (!cfg.gear.themes.includes(cfg.locks.theme)) cfg.locks.theme = null;
       if (!cfg.gear.effects.includes(cfg.locks.effect)) cfg.locks.effect = null;
-      if (!cfg.gear.stats.some((s) => s.name === cfg.locks.stat)) cfg.locks.stat = null;
     };
     const roll = () => {
-      const next = sgRoll(sgFeather(cfg.feather), cfg.gearType, cfg.gear, cfg.locks, cfg.rates[cfg.star]);
+      const next = sgRoll(current(), cfg.gearType, cfg.gear, cfg.locks);
       cfg.used += 1;
       if (sgIsEmpty(cfg.gear)) cfg.gear = next;
       else cfg.pending = next;
@@ -4059,11 +4011,11 @@
       const chance = c.theme * c.stat * c.effect;
       if (!chance) { toast('Mục tiêu này không thể đạt.', 'error'); return; }
       if (1 / chance > SG_MAX_AUTO) { toast(`Mục tiêu quá hiếm: trung bình cần ${gearFmt(Math.ceil(1 / chance), 0)} lông.`, 'error'); return; }
-      const feather = sgFeather(cfg.feather);
+      const feather = current();
       let done = 0;
       let hit = null;
       while (done < SG_MAX_AUTO && !hit) {
-        const next = sgRoll(feather, cfg.gearType, cfg.gear, cfg.locks, cfg.rates[cfg.star]);
+        const next = sgRoll(feather, cfg.gearType, cfg.gear, cfg.locks);
         done += 1;
         if (sgMeets(next, cfg.target)) hit = next;
       }
@@ -4100,7 +4052,7 @@
     }
 
     function renderTarget() {
-      const feather = sgFeather(cfg.feather);
+      const feather = current();
       const rows = sgStatRows(feather, cfg.gearType);
       const themes = sgThemes(feather);
       const effects = sgEffects(feather);
@@ -4109,8 +4061,8 @@
       const statNames = rows.map((r) => r.name);
       poolNote.textContent = feather.special
         ? `Kết quả cố định: ${themes.join(', ')}. Hiệu ứng: ${effects.join(', ')}.`
-        : `Pool: ${themes.length} theme, ${effects.length} hiệu ứng, ${rows.length} chỉ số.`;
-      const change = () => { saveUi(); renderTarget(); refreshOdds(); refresh(); };
+        : `${SG_STAR_NOTE[feather.star]} Pool: ${themes.length} theme, ${effects.length} hiệu ứng, ${rows.length} chỉ số.`;
+      const change = () => { saveUi(); renderTarget(); refresh(); };
       const familyOptions = [...SG_FAMILIES].filter(([, names]) => names.filter((n) => effects.includes(n)).length > 1)
         .map(([family]) => family + SG_ALL_LEVELS);
       const addToLine = (i, text) => {
@@ -4118,9 +4070,7 @@
         const family = clean.endsWith(SG_ALL_LEVELS) ? SG_FAMILIES.get(clean.slice(0, -SG_ALL_LEVELS.length)) : null;
         const names = family ? family.filter((n) => effects.includes(n)) : [clean].filter((n) => effects.includes(n));
         target.effects[i] = [...new Set([...target.effects[i], ...names])];
-        saveUi();
-        renderTarget();
-        refresh();
+        change();
         effectNote.textContent = clean && !names.length ? `Lông này không có "${clean}".` : '';
         targetBox.querySelector(`[data-line="${i}"]`)?.focus();
       };
@@ -4133,9 +4083,7 @@
           'aria-label': `Bỏ ${name} khỏi dòng ${i + 1}`,
           onclick: () => {
             target.effects[i] = line.filter((n) => n !== name);
-            saveUi();
-            renderTarget();
-            refresh();
+            change();
           },
         }, name, ic('x'))))) : null,
         el('input', {
@@ -4156,43 +4104,29 @@
             change();
           }),
           statRow ? sgSelect('Tối thiểu', target.min, sgStatValues(statRow).map((v) => [v, `+${v}`]),
-            (v) => { target.min = +v; change(); }) : null,
-          ),
+            (v) => { target.min = +v; change(); }) : null),
         el('h3', { class: 'roll-lines-title' }, 'Hiệu ứng (tối đa 3 dòng)'),
-        el('p', { class: 'hint' }, 'Gear phải có đủ các dòng đã chọn. Mỗi dòng chấp nhận nhiều loại: ra một trong số đó là đạt. Chọn mục "(mọi mức)" để thêm cả 3 mức của một hiệu ứng.'),
+        el('p', { class: 'hint' }, 'Gear phải có đủ các dòng đã chọn. Mỗi dòng chấp nhận nhiều loại: ra một trong số đó là đạt. Chọn mục "(mọi mức)" để thêm mọi mức của một hiệu ứng.'),
         el('datalist', { id: 'rollEffects' }, [...familyOptions, ...effects].map((n) => el('option', { value: n }))),
         target.effects.map(effectLine),
         effectNote));
     }
 
+    function renderStars() {
+      starBox.replaceChildren(...(current().special ? [] : [segmented('Độ hiếm lông', SG_STARS.map((key) => ({ key, label: `${key}★` })), () => cfg.star, (key) => {
+        cfg.star = key;
+        saveUi();
+        renderTarget();
+        refresh();
+      })]));
+    }
+
     const featherSelect = el('select', {
       class: 'field gear-input',
       'aria-label': 'Loại lông',
-      onchange: (e) => { cfg.feather = e.target.value; saveUi(); renderTarget(); renderRates(); refresh(); },
+      onchange: (e) => { cfg.pick = e.target.value; saveUi(); renderStars(); renderTarget(); refresh(); },
     });
-    sgFeatherOptions(featherSelect, '', cfg.feather);
-
-    function renderRates() {
-      const { special } = sgFeather(cfg.feather);
-      starBox.replaceChildren(...(special ? [] : [segmented('Độ hiếm lông', SG_STARS.map((key) => ({ key, label: `${key}★` })), () => cfg.star, (key) => {
-        cfg.star = key;
-        saveUi();
-        renderRates();
-        refresh();
-      })]));
-      const rates = cfg.rates[cfg.star];
-      const inputs = (labels, list) => el('div', { class: 'gear-common roll-weights' }, labels.map((label, i) => el('label', { class: 'gear-field' }, label, el('input', {
-        class: 'field gear-input', type: 'number', min: 0, step: 1, value: list[i],
-        oninput: (e) => { list[i] = gearNum(e.target.value); saveUi(); refreshOdds(); },
-      }))));
-      ratesBox.replaceChildren(
-        el('p', { class: 'hint' }, cfg.star === 2
-          ? 'Lông 2★: game có lông này nhưng chưa tìm được bảng tỉ lệ công khai. Trọng số 1 : 2 : 3 chỉ là giả định tạm, hãy thay bằng số trong game nếu có. Pool hiệu ứng tạm dùng như lông 1★ cùng màu.'
-          : 'Lông 1★: Serebii ghi các hiệu ứng có tỉ lệ đều nhau. Game không công bố tỉ lệ ra 1, 2 hay 3 ô, mặc định xem như bằng nhau.'),
-        el('h3', null, 'Trọng số số ô'), inputs(['1 ô', '2 ô', '3 ô'], rates.slots),
-        el('h3', null, 'Trọng số mức hiệu ứng'), inputs(['Thấp', 'Giữa', 'Cao'], rates.tiers),
-        el('p', { class: 'hint' }, 'Mỗi hiệu ứng có 3 mức, ví dụ Crit: Moves Up 1%, 2%, 3%. Áp dụng cho lông đang chọn ở độ hiếm này; lông Special luôn cố định.'));
-    }
+    sgFeatherOptions(featherSelect, '', cfg.pick);
 
     const page = el('div', null,
       el('div', { class: 'page-head' },
@@ -4203,6 +4137,7 @@
           cfg.gearType = key;
           reset();
           renderTarget();
+          refresh();
         })),
       el('div', { class: 'gear-layout' },
         el('div', { class: 'gear-inputs' },
@@ -4211,29 +4146,25 @@
             el('div', { class: 'roll-feather' },
               el('input', {
                 class: 'field gear-input', type: 'search', placeholder: 'Lọc lông Special theo theme hoặc hiệu ứng', 'aria-label': 'Lọc lông',
-                oninput: (e) => sgFeatherOptions(featherSelect, e.target.value, cfg.feather),
+                oninput: (e) => sgFeatherOptions(featherSelect, e.target.value, cfg.pick),
               }),
               featherSelect),
             starBox,
             poolNote),
-          targetBox,
-          el('details', { class: 'card gear-card gear-help roll-help' },
-            el('summary', null, 'Tỉ lệ roll (tự chỉnh được)'),
-            ratesBox)),
+          targetBox),
         results),
       el('details', { class: 'card gear-card gear-help' },
         el('summary', null, 'Cách mô phỏng và độ tin cậy'),
         el('ul', null,
-          el('li', null, 'Danh sách theme, hiệu ứng, khoảng chỉ số lấy từ Serebii; tỉ lệ trong mỗi danh sách là đều nhau.'),
-          el('li', null, 'Mỗi gear tối đa 3 theme, 3 chỉ số, 3 hiệu ứng (theo thông báo của game). Bracelet luôn có Attack, Bandanna luôn có Sp. Attack, Pin luôn có HP; lông Special cho kết quả cố định (theo Bulbapedia).'),
-          el('li', null, 'Giả định chưa được xác nhận: tỉ lệ số ô bằng nhau, giá trị chỉ số đều nhau theo bước 5, một lần roll không ra trùng dòng, ô ghim Ever Pin tính vào số ô đã bốc.'),
-          el('li', null, 'Lông 2★: Serebii chưa liệt kê và chưa tìm được bảng tỉ lệ công khai, nên mọi số của 2★ trên tab là giả định.'),
-          el('li', null, 'Ever Pin: thông báo của game chỉ nói ghim được 1 theme và 1 hiệu ứng, Serebii nói thêm 1 chỉ số. Tab này cho ghim cả 3 nhóm; nếu game không cho ghim chỉ số thì đừng dùng ô đó.'),
-          el('li', null, 'Chỉ số và hiệu ứng chỉ có tác dụng khi cặp đồng bộ có Theme Skill trùng một theme của gear.'),
-          el('li', null, 'Serebii ghi pool của lông Purple và Yellow giống hệt nhau, và không có lông Green.')),
-        el('p', { class: 'hint' }, 'Dữ liệu: ', el('a', { href: SG.source, target: '_blank', rel: 'noopener' }, 'Serebii Skill Gears'), `, cập nhật ${SG.fetched}. Số trên tab là mô phỏng, không phải kết quả trong game.`)));
+          el('li', null, 'Danh sách theme, hiệu ứng, số ô, khoảng và bước chỉ số lấy từ dữ liệu game; hiệu ứng và theme trong một lông có tỉ lệ đều nhau.'),
+          el('li', null, 'Lông càng nhiều sao càng dễ ra hiệu ứng tốt vì pool bị bỏ bớt mức thấp và có nhiều ô hơn. 2★ chỉ còn mức giữa và cao, 3★ chỉ còn mức cao nhất.'),
+          el('li', null, 'Bracelet luôn có Attack, Bandanna luôn có Sp. Attack, Pin luôn có HP.'),
+          el('li', null, 'Ever Pin ghim được 1 theme và 1 hiệu ứng, không ghim được chỉ số (theo mô tả vật phẩm trong game).'),
+          el('li', null, 'Giả định chưa được xác nhận: giá trị chỉ số đều nhau trong khoảng, một lần roll không ra trùng dòng, ô ghim Ever Pin tính vào số ô đã bốc.'),
+          el('li', null, 'Chỉ số và hiệu ứng chỉ có tác dụng khi cặp đồng bộ có Theme Skill trùng một theme của gear.')),
+        el('p', { class: 'hint' }, 'Dữ liệu: ', el('a', { href: SG.source, target: '_blank', rel: 'noopener' }, 'dữ liệu game do Pokebip trích xuất'), `, bản ${SG.version}, lấy ngày ${SG.fetched}. Số trên tab là mô phỏng, không phải kết quả trong game.`)));
+    renderStars();
     renderTarget();
-    renderRates();
     refresh();
     return page;
   }

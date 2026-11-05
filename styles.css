@@ -1101,10 +1101,6 @@ input.lv[readonly]:focus { outline-color: var(--border-strong); }
 .roll-feather { display: grid; gap: 8px; margin-bottom: 8px; }
 .roll-feather + .hint, .roll-effect-note { margin: 8px 0 0; }
 .roll-effect-note:empty { display: none; }
-.roll-wide { grid-column: 1 / -1; }
-.roll-weights { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 10px; }
-.roll-help { margin-top: 0; }
-.roll-help > .hint { margin: 10px 0 0; }
 .roll-odds { font-size: 14px; }
 .roll-odds p { margin: 0 0 8px; }
 .roll-odds-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
@@ -1126,9 +1122,6 @@ input.lv[readonly]:focus { outline-color: var(--border-strong); }
 .roll-choice { margin-top: 12px; }
 .roll-star { margin-bottom: 8px; }
 .roll-star:empty { display: none; }
-.roll-assume { padding: 6px 8px; border-radius: var(--radius-sm); background: var(--accent-soft); font-size: 12px; }
-.roll-help h3 { margin: 12px 0 0; font-size: 12px; font-weight: 600; color: var(--muted); }
-.roll-help .hint { margin: 10px 0 0; }
 .roll-lines-title { margin: 14px 0 2px; font-size: 13px; font-weight: 600; }
 .gear-card .roll-lines-title + .hint { margin: 0 0 8px; }
 .roll-line { display: grid; gap: 4px; margin-top: 8px; }
