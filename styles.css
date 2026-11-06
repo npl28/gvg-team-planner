@@ -1148,3 +1148,16 @@ input.lv[readonly]:focus { outline-color: var(--border-strong); }
 .roll-theme-list { margin: 0; }
 .roll-detail { max-height: 520px; overflow-y: auto; }
 .roll-detail thead th { position: sticky; top: 0; background: var(--surface); }
+/* Ảnh lông: viền tròn đồng / bạc / vàng theo số sao */
+.roll-fi { --fi: 40px; flex: none; display: inline-grid; place-items: center; width: var(--fi); height: var(--fi); padding: 3px; border-radius: 50%; box-sizing: content-box; box-shadow: 0 1px 2px rgb(0 0 0 / .25); }
+.roll-fi img { width: 100%; height: 100%; border-radius: 50%; object-fit: contain; background: radial-gradient(circle at 50% 40%, #ffffff, #f1efe4); }
+.roll-fi-1 { background: linear-gradient(135deg, #f3c9a0, #a8653a 42%, #e9b88c 60%, #7a4424); }
+.roll-fi-2 { background: linear-gradient(135deg, #ffffff, #a3adb9 42%, #eef2f6 60%, #737d89); }
+.roll-fi-3 { background: linear-gradient(135deg, #fff4b8, #d4a017 42%, #ffe47f 60%, #946a00); }
+.roll-fstrip { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.roll-fbtn { display: grid; justify-items: center; gap: 3px; min-width: 56px; padding: 5px 4px 4px; border: 2px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--text-2); font: inherit; font-size: 11px; cursor: pointer; }
+.roll-fbtn:hover { background: var(--surface-2); }
+.roll-fbtn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.roll-fbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.roll-star-cell { display: inline-flex; align-items: center; gap: 6px; }
+.roll-rates .roll-fstrip { margin-bottom: 8px; }

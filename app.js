@@ -3710,6 +3710,28 @@
   /** Hiệu ứng có % cao nhất trong họ của nó. */
   const SG_BEST = new Set([...SG_FAMILIES.values()].map((names) => names.reduce((a, b) => (sgPercent(b) > sgPercent(a) ? b : a))));
 
+  /** Ảnh lông (từ Serebii) trong viền tròn đồng/bạc/vàng theo số sao; lông Special là 3★. */
+  function sgFeatherIcon(feather, size = 40) {
+    const file = feather.special ? 'special' : feather.name.toLowerCase();
+    return el('span', { class: `roll-fi roll-fi-${feather.star}`, style: `--fi:${size}px` },
+      el('img', { src: `icons/feathers/${file}.png`, alt: '', loading: 'lazy', width: size, height: size }));
+  }
+
+  /** Dải chọn nhanh 7 màu lông thường (theo số sao đang chọn) và lông Special đang chọn. */
+  function sgFeatherStrip(pick, star, onPick) {
+    const regular = SG.feathers.filter((f) => !f.special && f.star === star);
+    const special = SG.feathers.find((f) => f.special && f.id === pick);
+    return el('div', { class: 'roll-fstrip', role: 'group', 'aria-label': 'Chọn nhanh loại lông' },
+      [...regular, ...(special ? [special] : [])].map((f) => {
+        const value = f.special ? f.id : f.name;
+        return el('button', {
+          type: 'button', class: 'roll-fbtn', 'aria-pressed': String(value === pick),
+          title: f.special ? `${f.name}: ${sgThemes(f).join(', ')}` : `${f.name} ${f.star}★`,
+          onclick: () => onPick(value),
+        }, sgFeatherIcon(f, 40), el('span', null, f.special ? f.name.replace('Special ', 'SP ') : f.name));
+      }));
+  }
+
   /** Lông đang chọn: `pick` là màu lông thường hoặc id lông Special. */
   const sgFeather = (pick, star) => SG.feathers.find((f) => (f.special ? f.id === pick : f.name === pick && f.star === star))
     || SG.feathers.find((f) => !f.special && f.star === star) || SG.feathers[0];
@@ -4021,7 +4043,7 @@
           const themes = f.themes.length;
           return el('tr', null,
             i === 0 ? el('th', { scope: 'rowgroup', rowspan: SG_STARS.length, class: 'roll-color' }, color, el('span', null, SG_COLOR_NOTE[color] || '')) : null,
-            el('td', null, `${f.star}★`),
+            el('td', null, el('span', { class: 'roll-star-cell' }, sgFeatherIcon(f, 28), `${f.star}★`)),
             odds.map((p) => sgNum(sgFmtPct(p), p ? '' : 'roll-zero')),
             el('td', null, SG_LEVEL_NOTE[f.star]),
             sgNum(effects),
@@ -4086,12 +4108,17 @@
     };
 
     const stars = el('div', { class: 'roll-star' });
-    const renderStars = () => stars.replaceChildren(...(sgFeather(cfg.pick, cfg.star).special ? [] : [
-      segmented('Độ hiếm lông', SG_STARS.map((key) => ({ key, label: `${key}★` })), () => cfg.star, (key) => { cfg.star = key; saveUi(); renderBody(); }),
-    ]));
+    const strip = el('div');
+    const pickFeather = (value) => { cfg.pick = value; saveUi(); sgFeatherOptions(select, '', cfg.pick); renderStars(); renderBody(); };
+    const renderStars = () => {
+      stars.replaceChildren(...(sgFeather(cfg.pick, cfg.star).special ? [] : [
+        segmented('Độ hiếm lông', SG_STARS.map((key) => ({ key, label: `${key}★` })), () => cfg.star, (key) => { cfg.star = key; saveUi(); renderStars(); renderBody(); }),
+      ]));
+      strip.replaceChildren(sgFeatherStrip(cfg.pick, cfg.star, pickFeather));
+    };
     const select = el('select', {
       class: 'field gear-input', 'aria-label': 'Loại lông',
-      onchange: (e) => { cfg.pick = e.target.value; saveUi(); renderStars(); renderBody(); },
+      onchange: (e) => pickFeather(e.target.value),
     });
     sgFeatherOptions(select, '', cfg.pick);
     renderStars();
@@ -4099,6 +4126,7 @@
     box.className = 'card gear-card';
     box.append(
       el('h2', null, 'Chi tiết từng lông'),
+      strip,
       el('div', { class: 'roll-detail-controls' }, select, stars,
         el('input', {
           class: 'field gear-input', type: 'search', placeholder: 'Lọc nhóm hiệu ứng', 'aria-label': 'Lọc nhóm hiệu ứng',
@@ -4246,19 +4274,35 @@
         effectNote));
     }
 
+    const stripBox = el('div');
+    const featherFilter = el('input', {
+      class: 'field gear-input', type: 'search', placeholder: 'Lọc lông Special theo theme hoặc hiệu ứng', 'aria-label': 'Lọc lông',
+      oninput: (e) => sgFeatherOptions(featherSelect, e.target.value, cfg.pick),
+    });
+    const pickFeather = (value) => {
+      cfg.pick = value;
+      saveUi();
+      sgFeatherOptions(featherSelect, featherFilter.value, cfg.pick);
+      renderStars();
+      renderTarget();
+      refresh();
+    };
+
     function renderStars() {
       starBox.replaceChildren(...(current().special ? [] : [segmented('Độ hiếm lông', SG_STARS.map((key) => ({ key, label: `${key}★` })), () => cfg.star, (key) => {
         cfg.star = key;
         saveUi();
+        renderStars();
         renderTarget();
         refresh();
       })]));
+      stripBox.replaceChildren(sgFeatherStrip(cfg.pick, cfg.star, pickFeather));
     }
 
     const featherSelect = el('select', {
       class: 'field gear-input',
       'aria-label': 'Loại lông',
-      onchange: (e) => { cfg.pick = e.target.value; saveUi(); renderStars(); renderTarget(); refresh(); },
+      onchange: (e) => pickFeather(e.target.value),
     });
     sgFeatherOptions(featherSelect, '', cfg.pick);
 
@@ -4278,12 +4322,8 @@
         el('div', { class: 'gear-inputs' },
           el('div', { class: 'card gear-card' },
             el('h2', null, 'Loại lông'),
-            el('div', { class: 'roll-feather' },
-              el('input', {
-                class: 'field gear-input', type: 'search', placeholder: 'Lọc lông Special theo theme hoặc hiệu ứng', 'aria-label': 'Lọc lông',
-                oninput: (e) => sgFeatherOptions(featherSelect, e.target.value, cfg.pick),
-              }),
-              featherSelect),
+            stripBox,
+            el('div', { class: 'roll-feather' }, featherFilter, featherSelect),
             starBox,
             poolNote),
           targetBox),
@@ -4296,7 +4336,8 @@
           el('li', null, 'Bracelet luôn có Attack, Bandanna luôn có Sp. Attack, Pin luôn có HP.'),
           el('li', null, 'Mỗi gear ghim được 1 dòng theme, 1 dòng hiệu ứng, hoặc cả hai; dòng đã ghim luôn giữ nguyên khi roll lại. Không ghim được chỉ số (theo mô tả vật phẩm trong game).'),
           el('li', null, 'Giả định chưa được xác nhận: giá trị chỉ số đều nhau trong khoảng, một lần roll không ra trùng dòng, ô ghim Ever Pin tính vào số ô đã bốc.'),
-          el('li', null, 'Chỉ số và hiệu ứng chỉ có tác dụng khi cặp đồng bộ có Theme Skill trùng một theme của gear.')),
+          el('li', null, 'Chỉ số và hiệu ứng chỉ có tác dụng khi cặp đồng bộ có Theme Skill trùng một theme của gear.'),
+          el('li', null, 'Ảnh lông lấy từ Serebii; viền đồng, bạc, vàng ứng với 1★, 2★, 3★ (lông Special là 3★).')),
         el('p', { class: 'hint' }, 'Dữ liệu: ', el('a', { href: SG.source, target: '_blank', rel: 'noopener' }, 'dữ liệu game do Pokebip trích xuất'), `, bản ${SG.version}, lấy ngày ${SG.fetched}. Số trên tab là mô phỏng, không phải kết quả trong game.`)));
     renderStars();
     renderTarget();
