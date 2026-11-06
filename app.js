@@ -1102,6 +1102,7 @@
     if (h === 'icons') return { view: 'icons' };
     if (h === 'gear') return { view: 'gear' };
     if (h === 'gear-roll') return { view: 'gearRoll' };
+    if (h === 'pair-roll') return { view: 'pairRoll' };
     if (h === 'login') return { view: 'login' };
     if (h === 'admin') return { view: 'admin' };
     return { view: 'rosters' };
@@ -1122,6 +1123,7 @@
     else if (r.view === 'icons') view.replaceChildren(renderIconLibrary());
     else if (r.view === 'gear') view.replaceChildren(renderGear());
     else if (r.view === 'gearRoll') view.replaceChildren(renderGearRoll());
+    else if (r.view === 'pairRoll') view.replaceChildren(renderPairRoll());
     else if (r.view === 'login') view.replaceChildren(renderLogin());
     else if (r.view === 'admin') view.replaceChildren(renderAdmin());
     else {
@@ -1187,6 +1189,7 @@
         : []),
       item('#gear', ic('scale'), 'So sánh gear', r.view === 'gear'),
       item('#gear-roll', ic('dice'), 'Roll gear', r.view === 'gearRoll'),
+      item('#pair-roll', ic('star'), 'Roll pair', r.view === 'pairRoll'),
       ...(SEASONS.length ? [el('div', { class: 'nav-section' }, 'Mùa giải'),
         ...SEASONS.map((x) => item(`#season/${x.id}`, ic('trophy'), x.name, r.view === 'season' && r.season === x))] : []),
       el('div', { class: 'nav-section' }, `Boss · ${state.bosses.length}`,
@@ -1230,16 +1233,17 @@
         colW: v.colW && typeof v.colW === 'object' ? v.colW : {},
         teamOpen: v.teamOpen && typeof v.teamOpen === 'object' ? v.teamOpen : {},
         gear: v.gear && typeof v.gear === 'object' ? v.gear : {},
+        scout: v.scout && typeof v.scout === 'object' ? v.scout : {},
       };
     } catch (_) {
-      return { collapsed: new Set(), offOpen: new Set(), colW: {}, teamOpen: {}, gear: {} };
+      return { collapsed: new Set(), offOpen: new Set(), colW: {}, teamOpen: {}, gear: {}, scout: {} };
     }
   })();
 
   function saveUi() {
     try {
       localStorage.setItem(UI_KEY, JSON.stringify({
-        collapsed: [...ui.collapsed], offOpen: [...ui.offOpen], colW: ui.colW, teamOpen: ui.teamOpen, gear: ui.gear,
+        collapsed: [...ui.collapsed], offOpen: [...ui.offOpen], colW: ui.colW, teamOpen: ui.teamOpen, gear: ui.gear, scout: ui.scout,
       }));
     } catch (_) { /* bỏ qua */ }
   }
@@ -4357,6 +4361,401 @@
     renderTarget();
     refresh();
     return page;
+  }
+
+  // ---------------------------------------------------------------- Mô phỏng scout pair
+  // Banner, pair rate-up và pool trong scouts.js (tools/scouts_to_js.py). Dữ liệu game không có tỷ lệ %:
+  // app dùng tỷ lệ preset theo loại banner (bảng Sync Pair Scout của wiki cộng đồng), người dùng sửa được.
+  const SC = window.SCOUT_DATA || null;
+  // five: % 5★ cả banner; main: % pair rate-up đầu tiên; extra: % mỗi pair rate-up còn lại; split: % chia đều cho mọi pair rate-up
+  const SC_KINDS = {
+    arcsuit: { label: 'Arc Suit Fair', five: 12, main: 1, extra: 1 },
+    exmaster: { label: 'EX Master Fair', five: 12, main: 1, extra: 1 },
+    master: { label: 'Master Fair', five: 12, main: 1, extra: 1 },
+    exfair: { label: 'EX Fair', five: 10, main: 2, extra: 1 },
+    fair: { label: 'Poké Fair', five: 10, main: 2, extra: 1 },
+    monthly: { label: 'Monthly Poké Fair', five: 10, main: 2, extra: 1 },
+    mix: { label: 'Mix Scout', five: 7, main: 2, extra: 2 },
+    variety: { label: 'Variety Scout', five: 7, split: 2 },
+  };
+  const SC_KIND_NOTE = {
+    monthly: 'Banner thật có thêm khoảng 20 pair Poké Fair cũ do server chọn; pool ở đây chưa có các pair đó.',
+    variety: 'Wiki ghi 2% cho pair rate-up mà không nói rõ cả nhóm hay mỗi pair; app đang chia đều 2% cho các pair rate-up.',
+    mix: 'Pool Mix gồm pool chung và các pair Poké Fair, Seasonal, Special, Variety, Mix (không có Master Fair, Arc Suit).',
+  };
+  const SC_FOUR = 20; // % 4★ mặc định (giả định), 3★ là phần còn lại
+  const SC_X11 = 11;
+  const SC_COST = { 1: 300, [SC_X11]: 3000 }; // gem cho ×1 và ×11; 100 gem = 1 scout point
+  const scCost = (n) => (n === SC_X11 ? SC_COST[SC_X11] : n * SC_COST[1]);
+  const SC_MAX_AUTO = 20000; // giới hạn số lần scout cho một lần "Scout đến khi ra"
+  const SC_RARITY = new Map((SC ? SC.pool : []).map(([id, rarity]) => [id, rarity]));
+
+  const scRarity = (id) => SC_RARITY.get(id) || 5; // pair rate-up luôn là 5★
+  const scName = (id) => {
+    const e = catById.get(id);
+    return e ? `${e.tr} & ${e.pk}` : id;
+  };
+  const scAvatar = (id, size) => avatar(catById.get(id), size);
+  const scTitle = (b) => (/Fair|Scout/.test(b.name) ? b.name : `${SC_KINDS[b.kind].label}: ${b.name}`);
+  /** Số lần scout ước tính, quy ra gem khi scout bằng ×11. */
+  const scGems = (pulls) => `${gearFmt(pulls, 0)} lần (≈ ${gearFmt(Math.ceil(pulls / SC_X11) * SC_COST[SC_X11], 0)} gem)`;
+
+  function scPreset(b) {
+    const kind = SC_KINDS[b.kind];
+    const n = b.pickups.length;
+    const feat = kind.split ? b.pickups.map(() => Math.round((kind.split / n) * 10000) / 10000) : b.pickups.map((_, i) => (i ? kind.extra : kind.main));
+    return { five: kind.five, four: SC_FOUR, feat };
+  }
+
+  function scState() {
+    const raw = ui.scout && typeof ui.scout === 'object' ? ui.scout : {};
+    const now = Date.now();
+    const banner = SC.banners.find((b) => b.id === raw.banner)
+      || SC.banners.find((b) => b.start <= now && b.end >= now) || SC.banners[0];
+    const map = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+    const st = { banner: banner.id, target: typeof raw.target === 'string' ? raw.target : '', rates: map(raw.rates), sessions: map(raw.sessions) };
+    // Banner đã hết khỏi dữ liệu thì bỏ tỷ lệ và lượt scout đã lưu
+    for (const key of ['rates', 'sessions']) {
+      for (const id of Object.keys(st[key])) if (!SC.banners.some((b) => b.id === id)) delete st[key][id];
+    }
+    if (!banner.pickups.includes(st.target)) st.target = banner.pickups[0];
+    ui.scout = st;
+    return st;
+  }
+
+  function scRates(st, b) {
+    const preset = scPreset(b);
+    const saved = st.rates[b.id];
+    if (!saved || typeof saved !== 'object') return preset;
+    const num = (v, d) => (typeof v === 'number' && v >= 0 && v <= 100 ? v : d);
+    return {
+      five: num(saved.five, preset.five),
+      four: num(saved.four, preset.four),
+      feat: preset.feat.map((d, i) => num(Array.isArray(saved.feat) ? saved.feat[i] : null, d)),
+    };
+  }
+
+  /** Pool off-rate theo độ hiếm: pair ra mắt trước khi banner mở, trừ pair rate-up. */
+  function scPools(b) {
+    const picked = new Set(b.pickups);
+    const pools = { 5: [], 4: [], 3: [] };
+    for (const [id, rarity, group, released] of SC.pool) {
+      if (picked.has(id) || (group === 'mix' && b.kind !== 'mix') || (released && released > b.start)) continue;
+      pools[rarity].push(id);
+    }
+    return pools;
+  }
+
+  /** Các nhóm bốc: từng pair rate-up, 5★ khác, 4★, 3★. `total` là tổng % của các nhóm có pair (thường 100). */
+  function scModel(b, rates) {
+    const pools = scPools(b);
+    const featSum = rates.feat.reduce((a, x) => a + x, 0);
+    const rows = [
+      ...b.pickups.map((id, i) => ({ ids: [id], pct: rates.feat[i], rarity: 5, feat: true })),
+      { ids: pools[5], pct: Math.max(rates.five - featSum, 0), rarity: 5 },
+      { ids: pools[4], pct: rates.four, rarity: 4 },
+      { ids: pools[3], pct: Math.max(100 - rates.five - rates.four, 0), rarity: 3 },
+    ];
+    const problems = [];
+    if (featSum > rates.five + 1e-9) problems.push(`Tổng tỷ lệ pair rate-up (${gearFmt(featSum)}%) lớn hơn tỷ lệ 5★ (${gearFmt(rates.five)}%): phần 5★ khác được tính là 0%.`);
+    if (rates.five + rates.four > 100 + 1e-9) problems.push('Tỷ lệ 5★ + 4★ vượt 100%: phần 3★ được tính là 0%.');
+    const total = rows.reduce((sum, r) => sum + (r.ids.length ? r.pct : 0), 0);
+    if (!total) problems.push('Mọi tỷ lệ đang là 0%, không scout được.');
+    return { rows, pools, problems, total };
+  }
+
+  /** Xác suất mỗi lần scout của một nhóm (đã chuẩn hóa theo tổng). */
+  const scShare = (model, row) => (model.total && row.ids.length ? row.pct / model.total : 0);
+
+  function scDraw(model) {
+    let x = Math.random() * model.total;
+    let last = null;
+    for (const row of model.rows) {
+      if (!row.ids.length || !row.pct) continue;
+      last = row;
+      x -= row.pct;
+      if (x < 0) break;
+    }
+    return last.ids[Math.floor(Math.random() * last.ids.length)];
+  }
+
+  const scEmpty = () => ({ pulls: 0, gems: 0, points: 0, got: {}, rar: {}, last: [], exchanged: 0 });
+
+  function scSession(st, b) {
+    const s = st.sessions[b.id];
+    const ok = s && typeof s === 'object';
+    st.sessions[b.id] = {
+      ...scEmpty(),
+      ...(ok ? {
+        pulls: gearNum(s.pulls), gems: gearNum(s.gems), points: gearNum(s.points), exchanged: gearNum(s.exchanged),
+        got: s.got && typeof s.got === 'object' ? s.got : {}, rar: s.rar && typeof s.rar === 'object' ? s.rar : {},
+        last: Array.isArray(s.last) ? s.last.filter((id) => typeof id === 'string') : [],
+      } : {}),
+    };
+    return st.sessions[b.id];
+  }
+
+  function scPull(sess, model, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const id = scDraw(model);
+      out.push(id);
+      sess.got[id] = (sess.got[id] || 0) + 1;
+      const r = scRarity(id);
+      sess.rar[r] = (sess.rar[r] || 0) + 1;
+    }
+    sess.pulls += n;
+    sess.gems += scCost(n);
+    sess.points += scCost(n) / 100;
+    sess.last = out;
+  }
+
+  function scExchange(sess, b, id) {
+    sess.points -= b.points;
+    sess.got[id] = (sess.got[id] || 0) + 1;
+    sess.exchanged += 1;
+  }
+
+  /** Số lần scout để đạt xác suất `q` khi mỗi lần là `p`. */
+  const scPullsFor = (p, q) => (p >= 1 ? 1 : Math.ceil(Math.log(1 - q) / Math.log(1 - p)));
+
+  function renderPairRoll() {
+    if (!SC || !SC.banners.length) {
+      return el('div', { class: 'page-head' }, el('h1', null, 'Mô phỏng scout pair'), el('span', { class: 'page-sub' }, 'Thiếu file scouts.js.'));
+    }
+    const st = scState();
+    const b = SC.banners.find((x) => x.id === st.banner);
+    const sess = scSession(st, b);
+    const kind = SC_KINDS[b.kind];
+    let rates = scRates(st, b);
+    let model = scModel(b, rates);
+    const n = b.pickups.length;
+    const ptsPerX11 = SC_COST[SC_X11] / 100;
+
+    const derived = [];
+    const live = (fn, cls) => {
+      const cell = sgNum(fn(), cls);
+      derived.push([cell, fn]);
+      return cell;
+    };
+    const problemBox = el('div', { role: 'status' });
+    const chanceBox = el('div', { class: 'roll-odds-box' });
+    const resultsBox = el('div', { class: 'gear-results', 'aria-live': 'polite' });
+
+    const update = () => {
+      model = scModel(b, rates);
+      for (const [cell, fn] of derived) cell.textContent = fn();
+      problemBox.replaceChildren(...model.problems.map((p) => el('p', { class: 'cloud-banner' }, p)));
+      chanceBox.replaceChildren(chanceCard());
+    };
+    const setRate = (apply) => {
+      apply(rates);
+      st.rates[b.id] = rates;
+      saveUi();
+      update();
+    };
+    const pctInput = (get, set, label) => el('input', {
+      class: 'field gear-input sc-pct', type: 'number', min: 0, max: 100, step: 0.01, value: String(get()), 'aria-label': label,
+      onchange: (e) => {
+        const v = e.target.value === '' ? NaN : +e.target.value;
+        if (!Number.isFinite(v) || v < 0 || v > 100) {
+          e.target.value = String(get());
+          toast('Nhập tỷ lệ từ 0 đến 100.', 'error');
+          return;
+        }
+        setRate((r) => set(r, v));
+      },
+    });
+
+    // ---- chọn banner
+    const now = Date.now();
+    const bannerList = el('div', { class: 'sc-banners', role: 'group', 'aria-label': 'Chọn banner' }, SC.banners.map((x) => el('button', {
+      type: 'button', class: 'sc-banner', 'aria-pressed': String(x.id === b.id), title: scTitle(x),
+      onclick: () => {
+        st.banner = x.id;
+        st.target = x.pickups[0];
+        saveUi();
+        render();
+      },
+    },
+    el('span', { class: 'sc-banner-kind' }, SC_KINDS[x.kind].label, x.start > now ? el('span', { class: 'gear-tag sc-soon' }, 'Sắp mở') : null),
+    el('span', { class: 'sc-banner-name' }, x.name),
+    el('span', { class: 'sc-banner-pairs' }, x.pickups.slice(0, 5).map((id) => scAvatar(id, 32)), x.pickups.length > 5 ? `+${x.pickups.length - 5}` : null),
+    el('span', { class: 'sc-banner-date' }, `${fmtDate(x.start)} – ${fmtDate(x.end)} · ${x.points} điểm`))));
+
+    // ---- bảng tỷ lệ
+    const row = (i) => model.rows[i];
+    const each = (i) => () => sgFmtPct(scShare(model, row(i)) / Math.max(row(i).ids.length, 1));
+    const group = (i) => () => sgFmtPct(scShare(model, row(i)));
+    const rateRows = [
+      ...b.pickups.map((id, i) => el('tr', { class: 'sc-feat-row' },
+        el('th', { scope: 'row' }, el('span', { class: 'sc-pair' }, scAvatar(id, 40), el('span', null, scName(id), el('small', null, 'Rate-up')))),
+        sgNum(1),
+        el('td', { class: 'num' }, pctInput(() => rates.feat[i], (r, v) => { r.feat[i] = v; }, `Tỷ lệ ${scName(id)} (%)`)),
+        live(each(i)))),
+      el('tr', null, el('th', { scope: 'row' }, '5★ khác'), live(() => row(n).ids.length), live(() => `${gearFmt(row(n).pct)}%`), live(each(n))),
+      el('tr', null, el('th', { scope: 'row' }, '4★'), live(() => row(n + 1).ids.length),
+        el('td', { class: 'num' }, pctInput(() => rates.four, (r, v) => { r.four = v; }, 'Tổng tỷ lệ 4★ (%)')), live(each(n + 1))),
+      el('tr', null, el('th', { scope: 'row' }, '3★'), live(() => row(n + 2).ids.length), live(() => `${gearFmt(row(n + 2).pct)}%`), live(each(n + 2))),
+    ];
+    const pools = model.pools;
+    const ratesCard = el('div', { class: 'card gear-card' },
+      el('div', { class: 'roll-card-head' }, el('h2', null, 'Tỷ lệ'),
+        st.rates[b.id] ? el('button', {
+          type: 'button', class: 'btn btn-sm btn-ghost',
+          onclick: () => { delete st.rates[b.id]; saveUi(); render(); },
+        }, 'Về preset') : el('span', { class: 'gear-tag sc-preset' }, `Preset ${kind.label}`)),
+      el('div', { class: 'gear-common' },
+        el('label', { class: 'gear-field' }, 'Tổng 5★ (%)', pctInput(() => rates.five, (r, v) => { r.five = v; }, 'Tổng tỷ lệ 5★ (%)')),
+        el('div', { class: 'gear-field' }, 'Mỗi lần scout', el('span', { class: 'sc-total' }, `×1: ${gearFmt(SC_COST[1], 0)} gem · ×${SC_X11}: ${gearFmt(SC_COST[SC_X11], 0)} gem`))),
+      el('div', { class: 'scroll' }, el('table', { class: 'roll-table sc-rates' },
+        el('thead', null, el('tr', null, sgTh('Nhóm'), sgTh('Số pair', 1), sgTh('Cả nhóm', 1), sgTh('Mỗi pair', 1))),
+        el('tbody', null, rateRows))),
+      problemBox,
+      el('p', { class: 'hint' }, `Preset theo loại banner: 5★ ${kind.five}%, `,
+        kind.split ? `pair rate-up chia đều ${kind.split}%` : `pair rate-up đầu ${kind.main}%${n > 1 ? `, các pair sau ${kind.extra}% mỗi pair` : ''}`,
+        `; 4★ ${SC_FOUR}% là giả định. Hãy đối chiếu Offering Rates trong game và sửa nếu lệch.`,
+        SC_KIND_NOTE[b.kind] ? ` ${SC_KIND_NOTE[b.kind]}` : ''),
+      el('details', { class: 'sc-pool' },
+        el('summary', null, `Pool off-rate: ${pools[5].length} pair 5★, ${pools[4].length} pair 4★, ${pools[3].length} pair 3★`),
+        [5, 4, 3].map((r) => (pools[r].length ? [el('h3', null, `${r}★`), el('div', { class: 'sc-pool-list' }, pools[r].map((id) => scAvatar(id, 32)))] : null))));
+
+    // ---- xác suất ra pair mục tiêu
+    function chanceCard() {
+      const i = Math.max(b.pickups.indexOf(st.target), 0);
+      const p = scShare(model, model.rows[i]);
+      const five = model.rows.filter((r) => r.rarity === 5).reduce((sum, r) => sum + scShare(model, r), 0);
+      const pityX11 = Math.ceil(b.points / ptsPerX11);
+      const select = el('select', {
+        class: 'field gear-input', 'aria-label': 'Pair mục tiêu',
+        onchange: (e) => { st.target = e.target.value; saveUi(); chanceBox.replaceChildren(chanceCard()); },
+      }, b.pickups.map((id) => el('option', { value: id, selected: id === st.target }, scName(id))));
+      const body = !p
+        ? el('p', { class: 'cloud-banner' }, 'Pair này đang có tỷ lệ 0%.')
+        : el('div', { class: 'roll-odds' },
+          el('p', null, 'Mỗi lần scout: ', el('strong', null, sgFmtPct(p)), ` · mỗi lần ×${SC_X11}: `, el('strong', null, sgFmtPct(1 - (1 - p) ** SC_X11))),
+          el('ul', { class: 'roll-odds-list' },
+            el('li', null, el('strong', null, scGems(Math.ceil(1 / p))), ' trung bình'),
+            el('li', null, el('strong', null, scGems(scPullsFor(p, 0.5))), ': 50% ra'),
+            el('li', null, el('strong', null, scGems(scPullsFor(p, 0.9))), ': 90% ra'),
+            el('li', null, 'Đủ ', el('strong', null, `${b.points} điểm`), ` để đổi chắc chắn sau ${pityX11} lần ×${SC_X11} = `,
+              el('strong', null, `${gearFmt(pityX11 * SC_X11, 0)} lần (${gearFmt(pityX11 * SC_COST[SC_X11], 0)} gem)`), `; ${sgFmtPct(1 - (1 - p) ** (pityX11 * SC_X11))} ra trước khi đủ điểm.`),
+            el('li', null, `Ít nhất 1 pair 5★ bất kỳ trong một lần ×${SC_X11}: `, el('strong', null, sgFmtPct(1 - (1 - five) ** SC_X11)))));
+      return el('div', null, el('label', { class: 'gear-field sc-target' }, 'Pair mục tiêu', select), body);
+    }
+
+    // ---- scout
+    const canScout = () => {
+      if (model.total) return true;
+      toast('Mọi tỷ lệ đang là 0%.', 'error');
+      return false;
+    };
+    const pull = (count) => {
+      if (!canScout()) return;
+      scPull(sess, model, count);
+      saveUi();
+      refresh();
+    };
+    const pullUntil = () => {
+      if (!canScout()) return;
+      const id = st.target;
+      const p = scShare(model, model.rows[b.pickups.indexOf(id)]);
+      if (!p) { toast('Pair mục tiêu đang có tỷ lệ 0%.', 'error'); return; }
+      const before = sess.got[id] || 0;
+      const start = sess.pulls;
+      const gemsBefore = sess.gems;
+      let exchanged = false;
+      while (sess.pulls - start < SC_MAX_AUTO && (sess.got[id] || 0) === before) {
+        if (sess.points >= b.points) {
+          scExchange(sess, b, id);
+          exchanged = true;
+          break;
+        }
+        scPull(sess, model, SC_X11);
+      }
+      const done = `${gearFmt(sess.pulls - start, 0)} lần (${gearFmt(sess.gems - gemsBefore, 0)} gem)`;
+      const got = (sess.got[id] || 0) > before;
+      toast(got ? `${exchanged ? 'Đổi điểm lấy' : 'Ra'} ${scName(id)} sau ${done}.` : `Chưa ra sau ${done}.`, got ? 'ok' : 'error');
+      saveUi();
+      refresh();
+    };
+    const reset = () => {
+      Object.assign(sess, scEmpty());
+      saveUi();
+      refresh();
+    };
+
+    const tile = (id) => {
+      const feat = b.pickups.includes(id);
+      const r = scRarity(id);
+      return el('li', { class: `sc-tile sc-r${r}${feat ? ' sc-feat' : ''}`, title: `${scName(id)} (${r}★${feat ? ', rate-up' : ''})` },
+        scAvatar(id, 48), el('span', { class: 'sc-tile-name' }, (catById.get(id) || {}).tr || id),
+        feat ? el('span', { class: 'sc-badge' }, 'Rate-up') : null);
+    };
+
+    function refresh() {
+      const full = sess.points >= b.points;
+      const exchangeSelect = el('select', { class: 'field gear-input', 'aria-label': 'Pair muốn đổi điểm' },
+        b.pickups.map((id) => el('option', { value: id, selected: id === st.target }, scName(id))));
+      const draws = [5, 4, 3].reduce((sum, r) => sum + (sess.rar[r] || 0), 0);
+      const got5 = Object.entries(sess.got).filter(([id]) => scRarity(id) === 5)
+        .sort(([a, x], [c, y]) => b.pickups.includes(c) - b.pickups.includes(a) || y - x);
+      const expected = (r) => model.rows.filter((x) => x.rarity === r).reduce((sum, x) => sum + scShare(model, x), 0);
+      resultsBox.replaceChildren(
+        el('div', { class: 'card gear-card' },
+          el('div', { class: 'roll-actions' },
+            el('button', { type: 'button', class: 'btn', onclick: () => pull(1) }, `Scout ×1`),
+            el('button', { type: 'button', class: 'btn btn-primary', onclick: () => pull(SC_X11) }, ic('star'), `Scout ×${SC_X11}`),
+            el('button', { type: 'button', class: 'btn', onclick: pullUntil, title: `Scout ×${SC_X11} liên tục tới khi ra pair mục tiêu; đủ điểm thì đổi điểm` }, 'Scout đến khi ra'),
+            el('button', { type: 'button', class: 'btn btn-ghost', onclick: reset }, 'Làm lại')),
+          el('div', { class: 'sc-points' },
+            el('span', null, 'Scout points: ', el('strong', null, `${gearFmt(sess.points, 0)} / ${b.points}`)),
+            el('span', { class: 'sc-bar', role: 'progressbar', 'aria-label': 'Scout points', 'aria-valuemin': 0, 'aria-valuemax': b.points, 'aria-valuenow': Math.min(sess.points, b.points) },
+              el('span', { style: `width:${Math.min(sess.points / b.points, 1) * 100}%` }))),
+          full ? el('div', { class: 'sc-exchange' }, exchangeSelect, el('button', {
+            type: 'button', class: 'btn btn-primary',
+            onclick: () => {
+              scExchange(sess, b, exchangeSelect.value);
+              toast(`Đã đổi ${b.points} điểm lấy ${scName(exchangeSelect.value)}.`, 'ok');
+              saveUi();
+              refresh();
+            },
+          }, `Đổi ${b.points} điểm`)) : null,
+          el('p', { class: 'hint' }, `Đã scout ${gearFmt(sess.pulls, 0)} lần, ${gearFmt(sess.gems, 0)} gem${sess.exchanged ? ` · đổi điểm ${sess.exchanged} lần` : ''}.`)),
+        el('div', { class: 'card gear-card' },
+          el('h2', null, sess.last.length ? `Lần scout gần nhất (×${sess.last.length})` : 'Lần scout gần nhất'),
+          sess.last.length ? el('ul', { class: 'sc-tiles' }, sess.last.map(tile)) : el('p', { class: 'hint' }, 'Chưa scout lần nào trên banner này.')),
+        el('div', { class: 'card gear-card' },
+          el('h2', null, 'Thống kê'),
+          el('ul', { class: 'roll-odds-list' }, [5, 4, 3].map((r) => el('li', null,
+            el('strong', null, gearFmt(sess.rar[r] || 0, 0)), ` pair ${r}★`,
+            draws ? ` · ${sgFmtPct((sess.rar[r] || 0) / draws)} (tỷ lệ ${sgFmtPct(expected(r))})` : ''))),
+          got5.length ? [el('h3', { class: 'roll-lines-title' }, 'Pair 5★ đã có'),
+            el('ul', { class: 'sc-got' }, got5.map(([id, count]) => el('li', { class: b.pickups.includes(id) ? 'feat' : null, title: scName(id) },
+              scAvatar(id, 28), scName(id), el('strong', null, `×${count}`))))] : null));
+    }
+
+    update();
+    refresh();
+    return el('div', null,
+      el('div', { class: 'page-head' },
+        el('h1', null, 'Mô phỏng scout pair'),
+        el('span', { class: 'page-sub' }, 'Xem tỷ lệ từng banner, thử scout và ước tính số gem cần cho một pair.')),
+      el('div', { class: 'card gear-card sc-pick' }, el('h2', null, `Banner đang chạy và sắp mở (${SC.banners.length})`), bannerList),
+      el('h2', { class: 'sc-title' }, scTitle(b)),
+      el('div', { class: 'gear-layout sc-layout' },
+        el('div', { class: 'gear-inputs' }, ratesCard, el('div', { class: 'card gear-card' }, el('h2', null, 'Xác suất ra pair'), chanceBox)),
+        resultsBox),
+      el('details', { class: 'card gear-card gear-help' },
+        el('summary', null, 'Cách mô phỏng và độ tin cậy'),
+        el('ul', null,
+          el('li', null, 'Banner, pair rate-up, thời gian và số scout points lấy từ dữ liệu game. Dữ liệu game không có tỷ lệ %: tỷ lệ là preset theo loại banner, sửa được và được nhớ trên trình duyệt.'),
+          el('li', null, 'Preset theo bảng Sync Pair Scout của wiki cộng đồng: Master Fair và Arc Suit Fair 5★ 12%, mỗi pair rate-up 1%; Poké Fair và EX Fair 5★ 10%, pair rate-up chính 2%, pair kèm theo 1%; Variety và Mix 5★ 7%.'),
+          el('li', null, `4★ ${SC_FOUR}% là giả định, 3★ là phần còn lại. Phần 5★ không thuộc rate-up chia đều cho pool 5★ khác; 4★ và 3★ chia đều trong nhóm.`),
+          el('li', null, 'Pool off-rate là các pair scout được ở pool chung, đã ra mắt trước khi banner mở. Pair Poké Fair, Master, Arc Suit… chỉ có khi là rate-up (riêng Mix có thêm pair Poké Fair, Seasonal, Variety…).'),
+          el('li', null, `Scout ×1 tốn ${gearFmt(SC_COST[1], 0)} gem, ×${SC_X11} tốn ${gearFmt(SC_COST[SC_X11], 0)} gem; 100 gem được 1 scout point. Số gem ước tính tính theo scout ×${SC_X11}. Lần ×${SC_X11} không có bảo đảm 5★. Không mô phỏng vé scout, giảm giá hằng ngày, scout nhiều bậc.`)),
+        el('p', { class: 'hint' }, 'Dữ liệu: ', el('a', { href: SC.source, target: '_blank', rel: 'noopener' }, 'dữ liệu game do Pokebip trích xuất'),
+          `, bản ${SC.version}, lấy ngày ${SC.fetched}. Số trên tab là mô phỏng, không phải kết quả trong game.`)));
   }
 
   // ---------------------------------------------------------------- Mùa giải (record từ Excel – chỉ xem)
