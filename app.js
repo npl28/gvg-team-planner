@@ -3717,6 +3717,15 @@
       el('img', { src: `icons/feathers/${file}.png`, alt: '', loading: 'lazy', width: size, height: size }));
   }
 
+  const sgGearImg = (gearType, size) => el('img', {
+    class: 'roll-gear-img', src: `icons/gears/${gearType.toLowerCase()}.png`, alt: '', loading: 'lazy', width: size, height: size,
+  });
+  /** Ô ảnh Skill Gear giống màn hình Gear Details trong game. */
+  const sgGearTile = (gearType) => el('div', { class: 'roll-gear-tile', role: 'img', 'aria-label': `${gearType} Lv. MAX` },
+    el('span', { class: 'roll-gear-star', 'aria-hidden': 'true' }, '★'),
+    el('span', { class: 'roll-gear-lv', 'aria-hidden': 'true' }, 'Lv.', el('b', null, 'MAX')),
+    sgGearImg(gearType, 76));
+
   /** Dải chọn nhanh 7 màu lông thường (theo số sao đang chọn) và lông Special đang chọn. */
   function sgFeatherStrip(pick, star, onPick) {
     const regular = SG.feathers.filter((f) => !f.special && f.star === star);
@@ -3974,11 +3983,13 @@
   function sgGearCard(cfg, refresh) {
     const { gear } = cfg;
     const met = sgHasTarget(cfg.target) && sgMeets(gear, cfg.target);
+    const group = (cat) => el('div', { class: 'roll-group' }, el('h3', null, cat.label), sgSlotRows(cfg, gear, cat, refresh));
     return el('div', { class: 'card gear-card' },
       el('div', { class: 'roll-card-head' }, el('h2', null, 'Gear hiện tại'),
         met ? el('span', { class: 'gear-tag gear-a' }, 'Đạt mục tiêu') : null),
       el('p', { class: 'hint roll-pin-hint' }, 'Ever Pin: ghim 1 dòng theme, 1 dòng hiệu ứng, hoặc cả hai. Dòng đã ghim luôn giữ nguyên khi roll lại.'),
-      SG_CATS.map((cat) => el('div', { class: 'roll-group' }, el('h3', null, cat.label), sgSlotRows(cfg, gear, cat, refresh))));
+      el('div', { class: 'roll-gear-top' }, sgGearTile(cfg.gearType), group(SG_CATS[0])),
+      SG_CATS.slice(1).map(group));
   }
 
   function sgChanceCard(cfg) {
@@ -4066,7 +4077,7 @@
         SG_GEARS.map((gear) => el('tbody', null, sgStatRows(regular[0], gear).map((row, i, rows) => {
           const fixed = sgStatRows(special, gear).find((r) => r.name === row.name);
           return el('tr', null,
-            i === 0 ? el('th', { scope: 'rowgroup', rowspan: rows.length }, gear) : null,
+            i === 0 ? el('th', { scope: 'rowgroup', rowspan: rows.length }, el('span', { class: 'roll-star-cell' }, sgGearImg(gear, 32), gear)) : null,
             el('td', { class: row.priority ? 'roll-main' : null }, row.name),
             el('td', null, `+${row.min} đến +${row.max}`),
             sgNum(sgFmtPct(1 / sgStatValues(row).length)),
@@ -4208,7 +4219,8 @@
             el('button', { type: 'button', class: 'btn btn-ghost', onclick: reset }, 'Làm lại từ đầu')),
           el('p', { class: 'hint' }, `Đã dùng ${gearFmt(cfg.used, 0)} lông cho gear này.`)),
         sgIsEmpty(cfg.gear)
-          ? el('div', { class: 'card gear-card' }, el('h2', null, 'Gear hiện tại'), el('p', { class: 'hint' }, 'Gear chưa mở khóa. Bấm "Dùng 1 lông" để bắt đầu.'))
+          ? el('div', { class: 'card gear-card' }, el('h2', null, 'Gear hiện tại'),
+            el('div', { class: 'roll-gear-top' }, sgGearTile(cfg.gearType), el('p', { class: 'hint' }, 'Gear chưa mở khóa. Bấm "Dùng 1 lông" để bắt đầu.')))
           : sgGearCard(cfg, refresh));
       refreshOdds();
     }
@@ -4312,7 +4324,7 @@
         el('span', { class: 'page-sub' }, 'Thử dùng Skill Feather, ghim Ever Pin và ước tính số lông cần cho một gear.')),
       el('div', { class: 'toolbar' },
         viewSwitch,
-        segmented('Loại gear', SG_GEARS.map((key) => ({ key, label: key })), () => cfg.gearType, (key) => {
+        segmented('Loại gear', SG_GEARS.map((key) => ({ key, label: [sgGearImg(key, 20), key] })), () => cfg.gearType, (key) => {
           cfg.gearType = key;
           reset();
           renderTarget();
@@ -4337,7 +4349,7 @@
           el('li', null, 'Mỗi gear ghim được 1 dòng theme, 1 dòng hiệu ứng, hoặc cả hai; dòng đã ghim luôn giữ nguyên khi roll lại. Không ghim được chỉ số (theo mô tả vật phẩm trong game).'),
           el('li', null, 'Giả định chưa được xác nhận: giá trị chỉ số đều nhau trong khoảng, một lần roll không ra trùng dòng, ô ghim Ever Pin tính vào số ô đã bốc.'),
           el('li', null, 'Chỉ số và hiệu ứng chỉ có tác dụng khi cặp đồng bộ có Theme Skill trùng một theme của gear.'),
-          el('li', null, 'Ảnh lông lấy từ Serebii; viền đồng, bạc, vàng ứng với 1★, 2★, 3★ (lông Special là 3★).')),
+          el('li', null, 'Ảnh lông và ảnh gear lấy từ Serebii; viền đồng, bạc, vàng ứng với 1★, 2★, 3★ (lông Special là 3★).')),
         el('p', { class: 'hint' }, 'Dữ liệu: ', el('a', { href: SG.source, target: '_blank', rel: 'noopener' }, 'dữ liệu game do Pokebip trích xuất'), `, bản ${SG.version}, lấy ngày ${SG.fetched}. Số trên tab là mô phỏng, không phải kết quả trong game.`)));
     renderStars();
     renderTarget();

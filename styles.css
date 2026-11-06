@@ -1161,3 +1161,13 @@ input.lv[readonly]:focus { outline-color: var(--border-strong); }
 .roll-fbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .roll-star-cell { display: inline-flex; align-items: center; gap: 6px; }
 .roll-rates .roll-fstrip { margin-bottom: 8px; }
+/* Ô ảnh Skill Gear kiểu màn hình Gear Details */
+.roll-gear-top { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; }
+.roll-gear-top > .roll-group { margin-top: 0; }
+.roll-gear-top > .hint { margin: 0; align-self: center; }
+.roll-gear-tile { position: relative; display: grid; place-items: center; width: 92px; height: 92px; border-radius: 14px; border: 2px solid #b9d9e3; background: linear-gradient(160deg, #ffffff 0%, #e4f3f6 55%, #c9e7ee 100%); box-shadow: inset 0 0 0 2px rgb(255 255 255 / .7), 0 1px 3px rgb(0 0 0 / .18); overflow: hidden; }
+.roll-gear-tile .roll-gear-img { width: 76px; height: 76px; margin-top: 8px; object-fit: contain; filter: drop-shadow(0 1px 1px rgb(0 0 0 / .15)); }
+.roll-gear-star { position: absolute; top: 2px; left: 5px; font-size: 20px; line-height: 1; background: linear-gradient(135deg, #ff7eb3, #ffd36e 35%, #7ee8a1 60%, #6ec8ff 85%); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 1px #ffffff) drop-shadow(0 1px 1px rgb(0 0 0 / .25)); }
+.roll-gear-lv { position: absolute; top: 4px; right: 6px; font-size: 10px; font-style: italic; font-weight: 700; line-height: 1; color: #ffffff; text-shadow: 0 0 2px #2f3b4a, 0 1px 1px #2f3b4a; }
+.roll-gear-lv b { font-size: 14px; letter-spacing: -.5px; }
+.seg-btn .roll-gear-img { width: 20px; height: 20px; margin: -3px 5px -5px 0; vertical-align: middle; }
