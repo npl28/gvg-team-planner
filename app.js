@@ -3688,6 +3688,7 @@
   const SG_STAT_STEP = 5;
   const SG_MAX_AUTO = 200000; // giới hạn số lông cho một lần "Roll đến khi đạt"
   const SG_LINES = 3; // tối đa 3 dòng hiệu ứng mục tiêu, mỗi dòng chấp nhận nhiều loại
+  const SG_SLOTS = 3; // mỗi nhóm trên gear có tối đa 3 dòng
   const SG_ALL_LEVELS = ' (mọi mức)';
   const SG_STAR_NOTE = {
     1: 'Đủ 3 mức hiệu ứng, ra 1 đến 3 ô.',
@@ -3962,8 +3963,9 @@
 
   function sgSlotRows(cfg, gear, cat, refresh) {
     const items = gear[cat.key];
-    if (!items.length) return el('p', { class: 'hint' }, '–');
-    return el('ul', { class: 'roll-slots' }, items.map((item) => {
+    // Luôn đủ 3 dòng như trong game; dòng roll không ra để trống.
+    return el('ul', { class: 'roll-slots' }, Array.from({ length: SG_SLOTS }, (_, i) => items[i]).map((item) => {
+      if (item === undefined) return el('li', { class: 'roll-slot roll-slot-empty' }, el('span', { class: 'sr-only' }, 'Trống'));
       const name = cat.key === 'stats' ? item.name : item;
       const text = cat.key === 'stats' ? `${item.name} +${item.value}` : item;
       const locked = !!cat.lock && cfg.locks[cat.lock] === name;
@@ -3982,12 +3984,15 @@
 
   function sgGearCard(cfg, refresh) {
     const { gear } = cfg;
-    const met = sgHasTarget(cfg.target) && sgMeets(gear, cfg.target);
+    const empty = sgIsEmpty(gear);
+    const met = !empty && sgHasTarget(cfg.target) && sgMeets(gear, cfg.target);
     const group = (cat) => el('div', { class: 'roll-group' }, el('h3', null, cat.label), sgSlotRows(cfg, gear, cat, refresh));
     return el('div', { class: 'card gear-card' },
       el('div', { class: 'roll-card-head' }, el('h2', null, 'Gear hiện tại'),
         met ? el('span', { class: 'gear-tag gear-a' }, 'Đạt mục tiêu') : null),
-      el('p', { class: 'hint roll-pin-hint' }, 'Ever Pin: ghim 1 dòng theme, 1 dòng hiệu ứng, hoặc cả hai. Dòng đã ghim luôn giữ nguyên khi roll lại.'),
+      el('p', { class: 'hint roll-pin-hint' }, empty
+        ? 'Gear chưa mở khóa. Bấm "Dùng 1 lông" để bắt đầu.'
+        : 'Ever Pin: ghim 1 dòng theme, 1 dòng hiệu ứng, hoặc cả hai. Dòng đã ghim luôn giữ nguyên khi roll lại.'),
       el('div', { class: 'roll-gear-top' }, sgGearTile(cfg.gearType), group(SG_CATS[0])),
       SG_CATS.slice(1).map(group));
   }
@@ -4218,10 +4223,7 @@
             el('button', { type: 'button', class: 'btn', onclick: rollUntil }, 'Roll đến khi đạt'),
             el('button', { type: 'button', class: 'btn btn-ghost', onclick: reset }, 'Làm lại từ đầu')),
           el('p', { class: 'hint' }, `Đã dùng ${gearFmt(cfg.used, 0)} lông cho gear này.`)),
-        sgIsEmpty(cfg.gear)
-          ? el('div', { class: 'card gear-card' }, el('h2', null, 'Gear hiện tại'),
-            el('div', { class: 'roll-gear-top' }, sgGearTile(cfg.gearType), el('p', { class: 'hint' }, 'Gear chưa mở khóa. Bấm "Dùng 1 lông" để bắt đầu.')))
-          : sgGearCard(cfg, refresh));
+        sgGearCard(cfg, refresh));
       refreshOdds();
     }
 

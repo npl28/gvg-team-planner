@@ -1171,3 +1171,5 @@ input.lv[readonly]:focus { outline-color: var(--border-strong); }
 .roll-gear-lv { position: absolute; top: 4px; right: 6px; font-size: 10px; font-style: italic; font-weight: 700; line-height: 1; color: #ffffff; text-shadow: 0 0 2px #2f3b4a, 0 1px 1px #2f3b4a; }
 .roll-gear-lv b { font-size: 14px; letter-spacing: -.5px; }
 .seg-btn .roll-gear-img { width: 20px; height: 20px; margin: -3px 5px -5px 0; vertical-align: middle; }
+.roll-slot-empty { background: transparent; border: 1px dashed var(--border); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
